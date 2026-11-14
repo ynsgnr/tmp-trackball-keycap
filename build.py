@@ -6,7 +6,8 @@ Replaces the original finger-ring base with an open box that
     end, two original screws go in from below at the other end,
   * is fused onto an MX cross-stem low-profile 1u keycap (1u.stl).
 
-Run:   python3 build.py   ->  trackball_mount.stl, preview.svg   (units: mm)
+Run:   python3 build.py   ->  trackball_mount.stl (with keycap),
+       trackball_base_plain.stl (box only), preview.svg   (units: mm)
 Print: upright (stem down), 0.4 mm nozzle / 0.2 mm layers, supports from the
        build plate only.
 
@@ -189,3 +190,8 @@ if __name__ == "__main__":
           "bodies", out.body_count)
     assert ok and out.is_watertight and out.body_count == 1
     out.export("trackball_mount.stl")
+    plain = trimesh.load("/tmp/_box.stl")            # box only, floor underside at z = 0
+    plain.apply_translation([0, 0, -Z0])
+    assert plain.is_watertight and plain.body_count == 1
+    plain.export("trackball_base_plain.stl")
+    print("plain bounds", plain.bounds.round(2).tolist())
