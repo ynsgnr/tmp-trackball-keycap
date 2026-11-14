@@ -16,20 +16,25 @@ Axes (top view):  X = long axis,  +X = screw end,  -X = hinge end
 The keycap sits under the -X/+Y corner, so the box only overhangs towards +X
 and -Y (off the keyboard).  Mirror in the slicer for the opposite corner.
 
-Shell/PCB numbers marked (*) are estimated from photos; the rest was measured.
+The wall follows the top shell's rim outline in outline.json, traced from the
+underside photo and scan by fit_outline.py.  Numbers marked (*) are estimated
+from photos; the rest was measured.
 """
+import json
+
 import cadquery as cq
 import trimesh
+from shapely.geometry import Polygon, box as rect
 
 # ---- FDM tolerances (0.4 mm nozzle, 0.2 mm layers) -------------------------
 CLR      = 0.2    # clearance per mating face, horizontal and vertical
 HOLE_CLR = 0.4    # added to the diameter of vertical holes (they print small)
 # Printed features are kept at >= 0.8 mm (two extrusion widths) and all levels
-# (floor, PCB seat, rim, lip, tab) land on 0.2 mm layers.
+# (floor, PCB seat, rim, tab) land on 0.2 mm layers.
 
 # ---- top shell --------------------------------------------------------------
-L, W, R    = 37.0, 30.0, 9.0   # (*) rim outline and corner radius
-TOP_WALL   = 1.0               # (*) top-shell wall thickness at the rim
+RIM = Polygon(json.load(open("outline.json")))   # rim outline traced from the
+XH, YU, XS, YB = RIM.bounds                      # photo/scan by fit_outline.py
 SCREW_DY   = 17.5              # (*) distance between the two screw posts
 SCREW_EDGE = 4.4               # (*) screw centre to the +X end
 SCREW_LEN  = 4.0               # screw length under the head
@@ -46,16 +51,17 @@ PCB_DROP   = 5.8               # (*) rim down to the PCB top face
 PCB_UNDER  = 3.0               # tallest part under the PCB (side button)
 PCB_X      = (-14.2, 14.8)     # (*) PCB extent along X
 PCB_Y      = (-11.75, 7.1)     # (*) PCB extent along Y
+PCB_SHAPE  = [(-14.2, 6.3), (-13.4, 7.1), (11, 7.1), (11, 4.85), (14.8, 4.85), (14.8, -6.2),
+              (11.2, -6.2), (11.2, -11.75), (-9.6, -11.75), (-14.2, -4.9)]   # (*)
 PCB_HOLES  = [(5.6, 4.85), (-6.1, -0.8)]   # (*) locating holes, ~1.7 mm
 PEG_D      = 1.2               # loose on purpose: hole positions are +-0.5
 BATTERY    = (20.0, 5.2, 10.0) # length, width, height standing on edge
+BAT_X      = -0.3              # battery centre along X (where the bay is widest)
 WIN_X      = (-12.0, 11.5)     # (*) USB-C + power switch opening along X
 BTN_Y      = (-1.5, 5.5)       # (*) access to the underside button, +X wall
 
 # ---- box --------------------------------------------------------------------
-WALL, FLOOR = 1.6, 1.6
-LIP_H, LIP_T = 1.2, 0.8        # locating lip inside the top shell
-LIP_X      = (-8.0, 8.0)
+WALL, FLOOR = 1.2, 1.6         # 1.2 wall: the battery needs the room at the corners
 
 # ---- keycap (1u.stl: 18 x 18 x 4.8, flat top, 1 mm ceiling) ----------------
 KEY, CAP_TOP, OVERLAP = 18.0, 4.8, 0.4
@@ -65,7 +71,6 @@ Z0   = CAP_TOP - OVERLAP                 # underside of the floor
 ZF   = Z0 + FLOOR                        # floor top
 ZPCB = ZF + PCB_UNDER + CLR              # PCB underside
 SEAM = ZPCB + PCB_T + PCB_DROP           # rim; the top shell sits here
-XH, XS = -L / 2, L / 2                   # hinge end, screw end
 
 
 def slab(x, y, z):
@@ -80,8 +85,10 @@ def cyl(x, y, d, z):
 
 
 def outline(inset, z):
-    return (cq.Workplane("XY").workplane(offset=z[0]).rect(L - 2 * inset, W - 2 * inset)
-            .extrude(z[1] - z[0]).edges("|Z").fillet(R - inset))
+    """Rim outline shrunk by `inset`, extruded over z = (min, max)."""
+    ring = RIM.buffer(-inset, 32).exterior
+    pts = [ring.interpolate(i / 96, normalized=True).coords[0] for i in range(96)]
+    return cq.Workplane("XY").workplane(offset=z[0]).spline(pts, periodic=True).close().extrude(z[1] - z[0])
 
 
 def shell():
@@ -109,16 +116,6 @@ def pcb_supports():
     return s
 
 
-def lip():
-    """Rib on the battery-side wall that rises inside the top shell."""
-    yo = W / 2 - TOP_WALL - CLR - 0.1      # 0.1 extra: shell wall is an estimate
-    yi, yw = yo - LIP_T, W / 2 - WALL + 0.2
-    prof = [(yw, SEAM - 2.0 - (yw - yi)), (yi, SEAM - 2.0), (yi, SEAM + LIP_H),
-            (yo, SEAM + LIP_H), (yo, SEAM), (yw, SEAM)]       # 45 deg underside
-    return (cq.Workplane("YZ").polyline(prof).close().extrude(LIP_X[1] - LIP_X[0])
-            .translate((LIP_X[0], 0, 0)))
-
-
 def hinge_tab():
     """Ledge sticking out of the -X end wall into the box, flush with the rim.
     It is free underneath (a 1 mm overhang, printable without support)."""
@@ -130,49 +127,50 @@ def hinge_tab():
 def usb_opening():
     """Removes the -Y wall over WIN_X through its full thickness, so the wall ends
     are clean full-height faces even where the wall starts to curve."""
-    wall_only = slab((XH - 1, XS + 1), (-W / 2 - 1, -W / 2 + R), (ZF, SEAM + 1)).cut(
+    wall_only = slab((XH - 1, XS + 1), (YU - 1, YU + 6), (ZF, SEAM + 1)).cut(
         outline(WALL, (ZF - 1, SEAM + 2)))
-    return slab(WIN_X, (-W / 2 - 1, -W / 2 + R), (ZF, SEAM + 1)).intersect(wall_only)
+    return slab(WIN_X, (YU - 1, YU + 6), (ZF, SEAM + 1)).intersect(wall_only)
 
 
 def button_opening():
-    return slab((XS - WALL - 0.5, XS + 1), BTN_Y, (ZF, ZPCB + 0.4))
+    return slab((XS - WALL - 1.0, XS + 1), BTN_Y, (ZF, ZPCB + 0.4))
 
 
 def build():
     bosses, holes = screw_bosses()
-    box = shell().cut(usb_opening()).union(bosses).union(pcb_supports()).union(lip()).union(hinge_tab())
+    box = shell().cut(usb_opening()).union(bosses).union(pcb_supports()).union(hinge_tab())
     return box.cut(holes).cut(button_opening())
 
 
 def validate(box):
-    """Check that the PCB, battery and top-shell rim have room, and print key gaps."""
+    """Check that the PCB and battery have room and nothing sticks up past the rim."""
     solid = box.val()
-    def overlap(x, y, z):
-        return solid.intersect(slab(x, y, z).val()).Volume()
+    def overlap(other):
+        return solid.intersect(other.val()).Volume()
     bat_l, bat_w, bat_h = BATTERY
-    lip_inner = W / 2 - TOP_WALL - CLR - 0.1 - LIP_T
+    room = RIM.buffer(-WALL - CLR)                       # usable floor plan
+    bat = rect(BAT_X - bat_l / 2, PCB_Y[1] + CLR, BAT_X + bat_l / 2, PCB_Y[1] + CLR + bat_w)
+    pcb = cq.Workplane("XY").workplane(offset=ZPCB + 0.01).polyline(PCB_SHAPE).close().extrude(PCB_T - 0.01)
+    pegs = len(PCB_HOLES) * 3.1416 * PEG_D ** 2 / 4 * (PCB_T - 0.01)
     checks = {
-        "PCB body collides (pegs excluded)":
-            overlap((PCB_X[0], 11), PCB_Y, (ZPCB + 0.01, ZPCB + PCB_T))
-            - len(PCB_HOLES) * 3.1416 * PEG_D ** 2 / 4 * (PCB_T - 0.01) > 0.01,
-        "under-PCB clearance < 3.2":            ZPCB - ZF < PCB_UNDER + CLR - 1e-6,
+        "PCB outline does not fit inside the walls": not room.contains(Polygon(PCB_SHAPE)),
+        "PCB body collides (pegs excluded)":         overlap(pcb) - pegs > 0.01,
+        "under-PCB clearance < 3.2":                 ZPCB - ZF < PCB_UNDER + CLR - 1e-6,
+        "battery does not fit inside the walls":     not room.contains(bat),
         "battery collides":
-            overlap((-bat_l / 2, bat_l / 2), (PCB_Y[1] + CLR, PCB_Y[1] + CLR + bat_w),
-                    (ZF + 0.01, ZF + bat_h)) > 1e-3,
-        "battery bay narrower than battery+0.4": lip_inner - PCB_Y[1] < bat_w + 2 * CLR,
-        "battery taller than cavity":            SEAM - ZF < bat_h - 1e-6,
-        "top-shell rim seat obstructed":
-            overlap((XH, XS), (-W / 2, W / 2), (SEAM + 0.01, SEAM + 3))
-            - overlap((XH + TOP_WALL + CLR, XS - TOP_WALL - CLR),
-                      (-W / 2 + TOP_WALL + CLR, W / 2 - TOP_WALL - CLR),
-                      (SEAM + 0.01, SEAM + 3)) > 1e-3,
-        "screw head has no seat":                SCREW_HEAD - (SCREW_HEAD - HOLE_CLR) < 0.3,
+            overlap(slab((bat.bounds[0], bat.bounds[2]), (bat.bounds[1], bat.bounds[3]),
+                         (ZF + 0.01, ZF + bat_h))) > 1e-3,
+        "battery taller than cavity":                SEAM - ZF < bat_h - 1e-6,
+        "something sticks up past the rim":          solid.BoundingBox().zmax > SEAM + 1e-6,
+        "screw boss outside the rim outline":
+            not RIM.buffer(-0.8).contains(rect(XS - SCREW_EDGE - 0.1, -SCREW_DY / 2,
+                                               XS - SCREW_EDGE + 0.1, SCREW_DY / 2)),
     }
     for name, failed in checks.items():
         print(("FAIL  " if failed else "ok    ") + name)
-    print(f"levels: floor {Z0:.1f}-{ZF:.1f}, PCB seat {ZPCB:.1f}, rim {SEAM:.1f}; "
-          f"battery bay {lip_inner - PCB_Y[1]:.1f} wide, {SEAM - ZF:.1f} deep")
+    print(f"rim outline {XS - XH:.1f} x {YB - YU:.1f}; levels: floor {Z0:.1f}-{ZF:.1f}, "
+          f"PCB seat {ZPCB:.1f}, rim {SEAM:.1f}; PCB-wall gap {room.exterior.distance(Polygon(PCB_SHAPE)) + CLR:.2f}, "
+          f"battery-wall gap {room.exterior.distance(bat) + CLR:.2f}")
     return not any(checks.values())
 
 
@@ -184,7 +182,7 @@ if __name__ == "__main__":
                                                  "showAxes": False, "width": 900, "height": 600})
     cap = trimesh.load("1u.stl")
     c = cap.bounds.mean(axis=0)
-    cap.apply_translation([XH + KEY / 2 - c[0], W / 2 - KEY / 2 - c[1], -cap.bounds[0][2]])
+    cap.apply_translation([XH + KEY / 2 - c[0], YB - KEY / 2 - c[1], -cap.bounds[0][2]])
     out = trimesh.boolean.union([cap, trimesh.load("/tmp/_box.stl")], engine="manifold")
     print("bounds", out.bounds.round(2).tolist(), "watertight", out.is_watertight,
           "bodies", out.body_count)
