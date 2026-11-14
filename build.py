@@ -1,101 +1,195 @@
 """Keycap-mounted replacement base for the HG66 mini ring trackball.
 
-Replaces the original finger-ring base: an open box that holds the PCB and
-battery, takes the original top shell (hinge tongue at one end, two screws at
-the other), stands the 5x10x20 battery on edge beside the PCB and is fused onto an MX cross-stem low-profile 1u keycap (1u.stl).
+Replaces the original finger-ring base with an open box that
+  * holds the PCB and the 501020 battery (standing on edge beside the PCB),
+  * takes the original top shell: its hinge ledge hooks under a hook at one
+    end, two original screws go in from below at the other end,
+  * is fused onto an MX cross-stem low-profile 1u keycap (1u.stl).
 
-Run: python3 build.py  ->  trackball_mount.stl  (mm)
-Print upright (stem down) with supports from the build plate only.
+Run:   python3 build.py   ->  trackball_mount.stl, preview.svg   (units: mm)
+Print: upright (stem down), 0.4 mm nozzle / 0.2 mm layers, supports from the
+       build plate only.  PETG preferred for the hinge hook.
 
-Axes (top view): X = long axis, +X = screw end, -X = hinge end
-                 Y = short axis, -Y = USB-C/switch side, +Y = battery side
-Keycap sits under the -X/+Y corner, so the box only overhangs towards +X and
--Y (off the keyboard).  Mirror in the slicer for the opposite corner.
-All shell numbers are estimated from photos - check the ones marked (*).
+Axes (top view):  X = long axis,  +X = screw end,  -X = hinge end
+                  Y = short axis, -Y = USB-C / power switch side, +Y = battery
+The keycap sits under the -X/+Y corner, so the box only overhangs towards +X
+and -Y (off the keyboard).  Mirror in the slicer for the opposite corner.
+
+Shell/PCB numbers marked (*) are estimated from photos; the rest was measured.
 """
-import cadquery as cq, trimesh
+import cadquery as cq
+import trimesh
 
-# ---- top shell (estimated) ----
-L, W, R   = 37.0, 30.0, 9.0   # outer outline of shell rim, corner radius
-TOP_WALL  = 1.0               # top-shell wall thickness at the rim
-SCREW_DY  = 17.5              # (*) distance between the two screw posts
-SCREW_EDGE = 4.4              # (*) screw centre to the +X end
-SCREW_D, HEAD_D = 1.5, 2.6    # clearance hole / counterbore for 2.0 mm head
-SEAT_T    = 1.4               # material under the head: 4 mm screw leaves ~2.6 mm in the post
-LEDGE_W   = 9.0               # hinge ledge on the top shell: width across the end
-LEDGE_IN  = 2.0               # (*) ledge inner edge, measured from the shell's outer face
-LEDGE_T   = 1.2               # (*) ledge thickness (ledge assumed flush with the rim)
-# ---- PCB (estimated) ----
-PCB_T     = 1.0
-PCB_DROP  = 5.7               # (*) seam (base rim) down to PCB top face
-PCB_GAP   = 3.2               # clearance under the PCB (3 mm side button underneath)
-PCB_HOLES = [(5.6, 4.85), (-6.1, -0.8)]   # (*) PCB locating holes (x, y)
-PEG_D     = 1.3
-PCB_Y_BAT = 7.1               # PCB edge on the battery side
-PCB_X_HINGE = -14.2           # PCB edge at the hinge end
-WIN_X     = (-12.0, 11.5)     # combined USB-C + power switch opening along X
-BTN_Y     = (-1.5, 5.5)       # (*) access hole in +X end wall for the underside side button
-# ---- box ----
-WALL, FLOOR = 1.6, 1.5
-LIP_H, LIP_T, LIP_CLR = 1.2, 0.9, 0.3
-# ---- keycap ----
-KEY, CAP_TOP, OVERLAP = 18.0, 4.8, 0.5
+# ---- FDM tolerances (0.4 mm nozzle, 0.2 mm layers) -------------------------
+CLR      = 0.2    # clearance per mating face, horizontal and vertical
+HOLE_CLR = 0.4    # added to the diameter of vertical holes (they print small)
+SAG      = 0.2    # extra vertical clearance under an unsupported overhang
+# Printed features are kept at >= 0.8 mm (two extrusion widths) and all levels
+# (floor, PCB seat, rim, lip, hook) land on 0.2 mm layers.
 
-z0   = CAP_TOP - OVERLAP              # underside of floor
-zf   = z0 + FLOOR                     # floor top
-zpb  = zf + PCB_GAP                   # PCB underside
-seam = zpb + PCB_T + PCB_DROP         # rim: top shell sits here
-H    = seam - z0
+# ---- top shell --------------------------------------------------------------
+L, W, R    = 37.0, 30.0, 9.0   # (*) rim outline and corner radius
+TOP_WALL   = 1.0               # (*) top-shell wall thickness at the rim
+SCREW_DY   = 17.5              # (*) distance between the two screw posts
+SCREW_EDGE = 4.4               # (*) screw centre to the +X end
+SCREW_LEN  = 4.0               # screw length under the head
+SCREW_HEAD = 2.0               # screw head diameter
+SCREW_GRIP = 2.6               # thread left to bite into the top-shell post
+DRIVER_D   = 3.2               # counterbore: head + screwdriver shaft
+LEDGE_W    = 9.0               # (*) hinge ledge width across the -X end
+LEDGE_IN   = 2.2               # (*) ledge inner edge from the shell's outer face
+LEDGE_T    = 1.2               # (*) ledge thickness (assumed flush with the rim)
 
-def slab(x0, x1, y0, y1, za, zb):
-    return (cq.Workplane("XY").workplane(offset=za)
-            .center((x0 + x1) / 2, (y0 + y1) / 2).rect(x1 - x0, y1 - y0).extrude(zb - za))
+# ---- electronics ------------------------------------------------------------
+PCB_T      = 1.0
+PCB_DROP   = 5.8               # (*) rim down to the PCB top face
+PCB_UNDER  = 3.0               # tallest part under the PCB (side button)
+PCB_X      = (-14.2, 14.8)     # (*) PCB extent along X
+PCB_Y      = (-11.75, 7.1)     # (*) PCB extent along Y
+PCB_HOLES  = [(5.6, 4.85), (-6.1, -0.8)]   # (*) locating holes, ~1.7 mm
+PEG_D      = 1.2               # loose on purpose: hole positions are +-0.5
+BATTERY    = (20.0, 5.2, 10.0) # length, width, height standing on edge
+WIN_X      = (-12.0, 11.5)     # (*) USB-C + power switch opening along X
+BTN_Y      = (-1.5, 5.5)       # (*) access to the underside button, +X wall
 
-def cyl(x, y, d, za, zb):
-    return cq.Workplane("XY").workplane(offset=za).center(x, y).circle(d / 2).extrude(zb - za)
+# ---- box --------------------------------------------------------------------
+WALL, FLOOR = 1.6, 1.6
+LIP_H, LIP_T = 1.2, 0.8        # locating lip inside the top shell
+LIP_X      = (-8.0, 8.0)
+HOOK_T     = 1.2               # hinge hook upright thickness
 
-outer  = cq.Workplane("XY").workplane(offset=z0).rect(L, W).extrude(H).edges("|Z").fillet(R)
-cavity = (cq.Workplane("XY").workplane(offset=zf).rect(L - 2 * WALL, W - 2 * WALL)
-          .extrude(H).edges("|Z").fillet(R - WALL))
-box = outer.cut(cavity)
+# ---- keycap (1u.stl: 18 x 18 x 4.8, flat top, 1 mm ceiling) ----------------
+KEY, CAP_TOP, OVERLAP = 18.0, 4.8, 0.4
 
-# screw bosses at +X end, counterbored from below
-sx = L / 2 - SCREW_EDGE
-for sy in (SCREW_DY / 2, -SCREW_DY / 2):
-    box = box.union(cyl(sx, sy, HEAD_D + 1.6, z0, seam).intersect(outer))
-for sy in (SCREW_DY / 2, -SCREW_DY / 2):
-    box = box.cut(cyl(sx, sy, SCREW_D, z0 - 1, seam + 1)).cut(cyl(sx, sy, HEAD_D, z0 - 1, seam - SEAT_T))
+# ---- derived levels ---------------------------------------------------------
+Z0   = CAP_TOP - OVERLAP                 # underside of the floor
+ZF   = Z0 + FLOOR                        # floor top
+ZPCB = ZF + PCB_UNDER + CLR              # PCB underside
+SEAM = ZPCB + PCB_T + PCB_DROP           # rim; the top shell sits here
+XH, XS = -L / 2, L / 2                   # hinge end, screw end
 
-# PCB supports: shouldered pegs, edge rail on battery side, pad at hinge end
-for x, y in PCB_HOLES:
-    box = box.union(cyl(x, y, 3.2, zf, zpb)).union(cyl(x, y, PEG_D, zpb, zpb + PCB_T + 0.4))
-box = box.union(slab(1, 11, PCB_Y_BAT - 0.9, PCB_Y_BAT + 0.5, zf, zpb))
-box = box.union(slab(PCB_X_HINGE - 0.3, PCB_X_HINGE + 1.0, -3, 3, zf, zpb))
 
-# locating lip on the battery side (fits inside the top shell wall)
-yo = W / 2 - TOP_WALL - LIP_CLR; yi = yo - LIP_T; yw = W / 2 - WALL + 0.2
-lip = (cq.Workplane("YZ").polyline([(yw, seam - 2.0 - (yw - yi)), (yi, seam - 2.0),
-       (yi, seam + LIP_H), (yo, seam + LIP_H), (yo, seam), (yw, seam)]).close().extrude(16)
-       .translate((-8, 0, 0)))
-box = box.union(lip)
+def slab(x, y, z):
+    """Axis-aligned block from (min, max) pairs."""
+    return (cq.Workplane("XY").workplane(offset=z[0])
+            .center(sum(x) / 2, sum(y) / 2).rect(x[1] - x[0], y[1] - y[0])
+            .extrude(z[1] - z[0]))
 
-# hinge end: hook that reaches up inside the top shell and over its ledge
-hx0 = -L / 2 + LEDGE_IN + 0.3; hx1 = hx0 + 1.5; hw = LEDGE_W - 1.0
-ztop = seam + LEDGE_T + 0.3
-box = box.union(slab(hx0, hx1, -hw / 2, hw / 2, zf, ztop + 1.2))
-box = box.union(slab(-L / 2 + WALL - 0.1, hx0 + 0.1, -hw / 2, hw / 2, zf, seam - 1.5))
-box = box.union(slab(hx0 - 1.0, hx0 + 0.1, -hw / 2, hw / 2, ztop, ztop + 1.2)
-                .edges("|Y and >Z and <X").chamfer(0.7))
 
-# USB-C + switch: wall opened up to the rim, floor relieved under the plug
-box = box.cut(slab(WIN_X[0], WIN_X[1], -W / 2 - 1, -W / 2 + WALL + 0.01, zf, seam + 1))
-box = box.cut(slab(L / 2 - WALL - 0.5, L / 2 + 1, BTN_Y[0], BTN_Y[1], zf, zpb + 0.3))
+def cyl(x, y, d, z):
+    return cq.Workplane("XY").workplane(offset=z[0]).center(x, y).circle(d / 2).extrude(z[1] - z[0])
 
-cq.exporters.export(box, "/tmp/_box.stl", tolerance=0.01, angularTolerance=0.05)
-cap = trimesh.load("1u.stl")
-c = cap.bounds.mean(axis=0)
-cap.apply_translation([-c[0] - L / 2 + KEY / 2, -c[1] + W / 2 - KEY / 2, 0])
-out = trimesh.boolean.union([cap, trimesh.load("/tmp/_box.stl")], engine="manifold")
-print("seam z", round(seam, 2), "bounds", out.bounds.round(2).tolist(),
-      "watertight", out.is_watertight, "bodies", out.body_count)
-out.export("trackball_mount.stl")
+
+def outline(inset, z):
+    return (cq.Workplane("XY").workplane(offset=z[0]).rect(L - 2 * inset, W - 2 * inset)
+            .extrude(z[1] - z[0]).edges("|Z").fillet(R - inset))
+
+
+def shell():
+    return outline(0, (Z0, SEAM)).cut(outline(WALL, (ZF, SEAM + 1)))
+
+
+def screw_bosses():
+    """Bosses at the +X end; screws enter from below through a deep counterbore."""
+    x = XS - SCREW_EDGE
+    seat = SEAM - (SCREW_LEN - SCREW_GRIP)        # underside of the screw head
+    add, cut = cq.Workplane("XY"), cq.Workplane("XY")
+    for y in (SCREW_DY / 2, -SCREW_DY / 2):
+        add = add.union(cyl(x, y, DRIVER_D + 2 * 0.8, (Z0, SEAM)))
+        # thread is ~1.4: nominal 1.6 hole prints ~1.4-1.5 and still seats a 2.0 head
+        cut = cut.union(cyl(x, y, SCREW_HEAD - HOLE_CLR, (Z0 - 1, SEAM + 1)))
+        cut = cut.union(cyl(x, y, DRIVER_D, (Z0 - 1, seat)))
+    return add.intersect(outline(0, (Z0, SEAM))), cut
+
+
+def pcb_supports(hook_x1):
+    s = slab((1, 11), (PCB_Y[1] - 1.0, PCB_Y[1]), (ZF, ZPCB))            # battery-side edge
+    s = s.union(slab((hook_x1 - 0.1, PCB_X[0] + 1.0), (-3, 3), (ZF, ZPCB)))  # hinge-end edge
+    for x, y in PCB_HOLES:
+        s = s.union(cyl(x, y, 3.2, (ZF, ZPCB))).union(cyl(x, y, PEG_D, (ZPCB, ZPCB + PCB_T + 0.4)))
+    return s
+
+
+def lip():
+    """Rib on the battery-side wall that rises inside the top shell."""
+    yo = W / 2 - TOP_WALL - CLR - 0.1      # 0.1 extra: shell wall is an estimate
+    yi, yw = yo - LIP_T, W / 2 - WALL + 0.2
+    prof = [(yw, SEAM - 2.0 - (yw - yi)), (yi, SEAM - 2.0), (yi, SEAM + LIP_H),
+            (yo, SEAM + LIP_H), (yo, SEAM), (yw, SEAM)]       # 45 deg underside
+    return (cq.Workplane("YZ").polyline(prof).close().extrude(LIP_X[1] - LIP_X[0])
+            .translate((LIP_X[0], 0, 0)))
+
+
+def hinge_hook():
+    """Upright inside the top shell with a barb over its hinge ledge."""
+    x0 = XH + LEDGE_IN + CLR + 0.1         # upright outer face
+    x1 = x0 + HOOK_T
+    xb = XH + TOP_WALL + CLR + 0.1         # barb tip, clear of the shell wall
+    y = (-LEDGE_W / 2 + 0.5, LEDGE_W / 2 - 0.5)
+    zb = SEAM + LEDGE_T + CLR + SAG        # barb underside
+    hook = slab((x0, x1), y, (ZF, zb + 1.2))
+    hook = hook.union(slab((XH + WALL - 0.1, x0 + 0.1), y, (ZF, SEAM - 1.6)))   # tie to wall
+    barb = slab((xb, x0 + 0.1), y, (zb, zb + 1.2)).edges("|Y and >Z and <X").chamfer(0.6)
+    return hook.union(barb), x1
+
+
+def openings():
+    usb = slab(WIN_X, (-W / 2 - 1, -W / 2 + WALL + 0.01), (ZF, SEAM + 1))
+    btn = slab((XS - WALL - 0.5, XS + 1), BTN_Y, (ZF, ZPCB + 0.4))
+    return usb.union(btn)
+
+
+def build():
+    hook, hook_x1 = hinge_hook()
+    bosses, holes = screw_bosses()
+    box = shell().union(bosses).union(pcb_supports(hook_x1)).union(lip()).union(hook)
+    return box.cut(holes).cut(openings()), hook_x1
+
+
+def validate(box, hook_x1):
+    """Check that the PCB, battery and top-shell rim have room, and print key gaps."""
+    solid = box.val()
+    def overlap(x, y, z):
+        return solid.intersect(slab(x, y, z).val()).Volume()
+    bat_l, bat_w, bat_h = BATTERY
+    lip_inner = W / 2 - TOP_WALL - CLR - 0.1 - LIP_T
+    checks = {
+        "PCB body collides (pegs excluded)":
+            overlap((PCB_X[0], 11), PCB_Y, (ZPCB + 0.01, ZPCB + PCB_T))
+            - len(PCB_HOLES) * 3.1416 * PEG_D ** 2 / 4 * (PCB_T - 0.01) > 0.01,
+        "under-PCB clearance < 3.2":            ZPCB - ZF < PCB_UNDER + CLR - 1e-6,
+        "battery collides":
+            overlap((-bat_l / 2, bat_l / 2), (PCB_Y[1] + CLR, PCB_Y[1] + CLR + bat_w),
+                    (ZF + 0.01, ZF + bat_h)) > 1e-3,
+        "battery bay narrower than battery+0.4": lip_inner - PCB_Y[1] < bat_w + 2 * CLR,
+        "battery taller than cavity":            SEAM - ZF < bat_h - 1e-6,
+        "top-shell rim seat obstructed":
+            overlap((XH, XS), (-W / 2, W / 2), (SEAM + 0.01, SEAM + 3))
+            - overlap((XH + TOP_WALL + CLR, XS - TOP_WALL - CLR),
+                      (-W / 2 + TOP_WALL + CLR, W / 2 - TOP_WALL - CLR),
+                      (SEAM + 0.01, SEAM + 3)) > 1e-3,
+        "hook upright hits PCB end":             PCB_X[0] - hook_x1 < 2 * CLR - 1e-6,
+        "screw head has no seat":                SCREW_HEAD - (SCREW_HEAD - HOLE_CLR) < 0.3,
+    }
+    for name, failed in checks.items():
+        print(("FAIL  " if failed else "ok    ") + name)
+    print(f"levels: floor {Z0:.1f}-{ZF:.1f}, PCB seat {ZPCB:.1f}, rim {SEAM:.1f}; "
+          f"battery bay {lip_inner - PCB_Y[1]:.1f} wide, {SEAM - ZF:.1f} deep; "
+          f"hook-PCB gap {PCB_X[0] - hook_x1:.1f}")
+    return not any(checks.values())
+
+
+if __name__ == "__main__":
+    box, hook_x1 = build()
+    ok = validate(box, hook_x1)
+    cq.exporters.export(box, "/tmp/_box.stl", tolerance=0.01, angularTolerance=0.05)
+    cq.exporters.export(box, "preview.svg", opt={"projectionDir": (0.5, -1.0, 2.0),
+                                                 "showAxes": False, "width": 900, "height": 600})
+    cap = trimesh.load("1u.stl")
+    c = cap.bounds.mean(axis=0)
+    cap.apply_translation([XH + KEY / 2 - c[0], W / 2 - KEY / 2 - c[1], -cap.bounds[0][2]])
+    out = trimesh.boolean.union([cap, trimesh.load("/tmp/_box.stl")], engine="manifold")
+    print("bounds", out.bounds.round(2).tolist(), "watertight", out.is_watertight,
+          "bodies", out.body_count)
+    assert ok and out.is_watertight and out.body_count == 1
+    out.export("trackball_mount.stl")
