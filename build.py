@@ -50,7 +50,6 @@ PCB_HOLES  = [(5.6, 4.85), (-6.1, -0.8)]   # (*) locating holes, ~1.7 mm
 PEG_D      = 1.2               # loose on purpose: hole positions are +-0.5
 BATTERY    = (20.0, 5.2, 10.0) # length, width, height standing on edge
 WIN_X      = (-12.0, 11.5)     # (*) USB-C + power switch opening along X
-WIN_RAMP   = 6.0               # wall ends slope up to the rim over this length
 BTN_Y      = (-1.5, 5.5)       # (*) access to the underside button, +X wall
 
 # ---- box --------------------------------------------------------------------
@@ -135,15 +134,11 @@ def hinge_hook():
 
 
 def usb_opening():
-    """Removes the -Y wall over WIN_X; the wall ends ramp from the floor up to the
-    rim over WIN_RAMP, following the wall round the corners (no stubs or steps)."""
-    a, b = WIN_X
-    prof = [(a, ZF), (b, ZF), (b + WIN_RAMP, SEAM), (b + WIN_RAMP, SEAM + 1),
-            (a - WIN_RAMP, SEAM + 1), (a - WIN_RAMP, SEAM)]
-    prism = cq.Workplane("XZ").polyline(prof).close().extrude(W, both=True)
+    """Removes the -Y wall over WIN_X through its full thickness, so the wall ends
+    are clean full-height faces even where the wall starts to curve."""
     wall_only = slab((XH - 1, XS + 1), (-W / 2 - 1, -W / 2 + R), (ZF, SEAM + 1)).cut(
         outline(WALL, (ZF - 1, SEAM + 2)))
-    return prism.intersect(wall_only)
+    return slab(WIN_X, (-W / 2 - 1, -W / 2 + R), (ZF, SEAM + 1)).intersect(wall_only)
 
 
 def button_opening():
