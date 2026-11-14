@@ -2,13 +2,13 @@
 
 Replaces the original finger-ring base with an open box that
   * holds the PCB and the 501020 battery (standing on edge beside the PCB),
-  * takes the original top shell: its hinge ledge hooks under a hook at one
+  * takes the original top shell: a hinge tab on the end wall goes up into it at one
     end, two original screws go in from below at the other end,
   * is fused onto an MX cross-stem low-profile 1u keycap (1u.stl).
 
 Run:   python3 build.py   ->  trackball_mount.stl, preview.svg   (units: mm)
 Print: upright (stem down), 0.4 mm nozzle / 0.2 mm layers, supports from the
-       build plate only.  PETG preferred for the hinge hook.
+       build plate only.
 
 Axes (top view):  X = long axis,  +X = screw end,  -X = hinge end
                   Y = short axis, -Y = USB-C / power switch side, +Y = battery
@@ -23,9 +23,8 @@ import trimesh
 # ---- FDM tolerances (0.4 mm nozzle, 0.2 mm layers) -------------------------
 CLR      = 0.2    # clearance per mating face, horizontal and vertical
 HOLE_CLR = 0.4    # added to the diameter of vertical holes (they print small)
-SAG      = 0.2    # extra vertical clearance under an unsupported overhang
 # Printed features are kept at >= 0.8 mm (two extrusion widths) and all levels
-# (floor, PCB seat, rim, lip, hook) land on 0.2 mm layers.
+# (floor, PCB seat, rim, lip, tab) land on 0.2 mm layers.
 
 # ---- top shell --------------------------------------------------------------
 L, W, R    = 37.0, 30.0, 9.0   # (*) rim outline and corner radius
@@ -36,9 +35,9 @@ SCREW_LEN  = 4.0               # screw length under the head
 SCREW_HEAD = 2.0               # screw head diameter
 SCREW_GRIP = 2.6               # thread left to bite into the top-shell post
 DRIVER_D   = 3.2               # counterbore: head + screwdriver shaft
-LEDGE_W    = 9.0               # (*) hinge ledge width across the -X end
-LEDGE_IN   = 2.2               # (*) ledge inner edge from the shell's outer face
-LEDGE_T    = 1.2               # (*) ledge thickness (assumed flush with the rim)
+TAB_W      = 10.0              # hinge tab width (original base)
+TAB_H      = 1.0               # hinge tab height above the rim (original base)
+TAB_T      = 0.8               # (*) tab thickness; sits 1.0-1.8 from the outer face
 
 # ---- electronics ------------------------------------------------------------
 PCB_T      = 1.0
@@ -56,7 +55,6 @@ BTN_Y      = (-1.5, 5.5)       # (*) access to the underside button, +X wall
 WALL, FLOOR = 1.6, 1.6
 LIP_H, LIP_T = 1.2, 0.8        # locating lip inside the top shell
 LIP_X      = (-8.0, 8.0)
-HOOK_T     = 1.2               # hinge hook upright thickness
 
 # ---- keycap (1u.stl: 18 x 18 x 4.8, flat top, 1 mm ceiling) ----------------
 KEY, CAP_TOP, OVERLAP = 18.0, 4.8, 0.4
@@ -102,9 +100,9 @@ def screw_bosses():
     return add.intersect(outline(0, (Z0, SEAM))), cut
 
 
-def pcb_supports(hook_x1):
+def pcb_supports():
     s = slab((1, 11), (PCB_Y[1] - 1.0, PCB_Y[1]), (ZF, ZPCB))            # battery-side edge
-    s = s.union(slab((hook_x1 - 0.1, PCB_X[0] + 1.0), (-3, 3), (ZF, ZPCB)))  # hinge-end edge
+    s = s.union(slab((PCB_X[0] - 0.4, PCB_X[0] + 1.0), (-3, 3), (ZF, ZPCB)))  # hinge-end edge
     for x, y in PCB_HOLES:
         s = s.union(cyl(x, y, 3.2, (ZF, ZPCB))).union(cyl(x, y, PEG_D, (ZPCB, ZPCB + PCB_T + 0.4)))
     return s
@@ -120,17 +118,11 @@ def lip():
             .translate((LIP_X[0], 0, 0)))
 
 
-def hinge_hook():
-    """Upright inside the top shell with a barb over its hinge ledge."""
-    x0 = XH + LEDGE_IN + CLR + 0.1         # upright outer face
-    x1 = x0 + HOOK_T
-    xb = XH + TOP_WALL + CLR + 0.1         # barb tip, clear of the shell wall
-    y = (-LEDGE_W / 2 + 0.5, LEDGE_W / 2 - 0.5)
-    zb = SEAM + LEDGE_T + CLR + SAG        # barb underside
-    hook = slab((x0, x1), y, (ZF, zb + 1.2))
-    hook = hook.union(slab((XH + WALL - 0.1, x0 + 0.1), y, (ZF, SEAM - 1.6)))   # tie to wall
-    barb = slab((xb, x0 + 0.1), y, (zb, zb + 1.2)).edges("|Y and >Z and <X").chamfer(0.6)
-    return hook.union(barb), x1
+def hinge_tab():
+    """Tab growing out of the -X end wall, up into the top shell's hinge pocket."""
+    x0 = XH + TOP_WALL                     # clear of the shell's outer skin
+    y = (-TAB_W / 2 + CLR / 2, TAB_W / 2 - CLR / 2)
+    return slab((x0, x0 + TAB_T), y, (ZF, SEAM + TAB_H))
 
 
 def usb_opening():
@@ -146,13 +138,12 @@ def button_opening():
 
 
 def build():
-    hook, hook_x1 = hinge_hook()
     bosses, holes = screw_bosses()
-    box = shell().cut(usb_opening()).union(bosses).union(pcb_supports(hook_x1)).union(lip()).union(hook)
-    return box.cut(holes).cut(button_opening()), hook_x1
+    box = shell().cut(usb_opening()).union(bosses).union(pcb_supports()).union(lip()).union(hinge_tab())
+    return box.cut(holes).cut(button_opening())
 
 
-def validate(box, hook_x1):
+def validate(box):
     """Check that the PCB, battery and top-shell rim have room, and print key gaps."""
     solid = box.val()
     def overlap(x, y, z):
@@ -171,23 +162,21 @@ def validate(box, hook_x1):
         "battery taller than cavity":            SEAM - ZF < bat_h - 1e-6,
         "top-shell rim seat obstructed":
             overlap((XH, XS), (-W / 2, W / 2), (SEAM + 0.01, SEAM + 3))
-            - overlap((XH + TOP_WALL + CLR, XS - TOP_WALL - CLR),
+            - overlap((XH + TOP_WALL, XS - TOP_WALL - CLR),   # hinge tab enters the shell's pocket
                       (-W / 2 + TOP_WALL + CLR, W / 2 - TOP_WALL - CLR),
                       (SEAM + 0.01, SEAM + 3)) > 1e-3,
-        "hook upright hits PCB end":             PCB_X[0] - hook_x1 < 2 * CLR - 1e-6,
         "screw head has no seat":                SCREW_HEAD - (SCREW_HEAD - HOLE_CLR) < 0.3,
     }
     for name, failed in checks.items():
         print(("FAIL  " if failed else "ok    ") + name)
     print(f"levels: floor {Z0:.1f}-{ZF:.1f}, PCB seat {ZPCB:.1f}, rim {SEAM:.1f}; "
-          f"battery bay {lip_inner - PCB_Y[1]:.1f} wide, {SEAM - ZF:.1f} deep; "
-          f"hook-PCB gap {PCB_X[0] - hook_x1:.1f}")
+          f"battery bay {lip_inner - PCB_Y[1]:.1f} wide, {SEAM - ZF:.1f} deep")
     return not any(checks.values())
 
 
 if __name__ == "__main__":
-    box, hook_x1 = build()
-    ok = validate(box, hook_x1)
+    box = build()
+    ok = validate(box)
     cq.exporters.export(box, "/tmp/_box.stl", tolerance=0.01, angularTolerance=0.05)
     cq.exporters.export(box, "preview.svg", opt={"projectionDir": (0.5, -1.0, 2.0),
                                                  "showAxes": False, "width": 900, "height": 600})
