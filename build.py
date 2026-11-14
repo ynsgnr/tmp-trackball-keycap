@@ -20,8 +20,8 @@ L, W, R   = 37.0, 30.0, 9.0   # outer outline of shell rim, corner radius
 TOP_WALL  = 1.0               # top-shell wall thickness at the rim
 SCREW_DY  = 17.5              # (*) distance between the two screw posts
 SCREW_EDGE = 4.4              # (*) screw centre to the +X end
-SCREW_D, HEAD_D = 2.2, 3.6    # clearance hole / head counterbore
-SEAT_T    = 2.0               # (*) material under the screw head (= screw length - ~4)
+SCREW_D, HEAD_D = 1.5, 2.6    # clearance hole / counterbore for 2.0 mm head
+SEAT_T    = 1.4               # material under the head: 4 mm screw leaves ~2.6 mm in the post
 LEDGE_W   = 9.0               # hinge ledge on the top shell: width across the end
 LEDGE_IN  = 2.0               # (*) ledge inner edge, measured from the shell's outer face
 LEDGE_T   = 1.2               # (*) ledge thickness (ledge assumed flush with the rim)
