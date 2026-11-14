@@ -2,7 +2,7 @@
 
 Replaces the original finger-ring base: an open box that holds the PCB and
 battery, takes the original top shell (hinge tongue at one end, two screws at
-the other) and is fused onto an MX cross-stem low-profile 1u keycap (1u.stl).
+the other), stands the 5x10x20 battery on edge beside the PCB and is fused onto an MX cross-stem low-profile 1u keycap (1u.stl).
 
 Run: python3 build.py  ->  trackball_mount.stl  (mm)
 Print upright (stem down) with supports from the build plate only.
@@ -22,18 +22,19 @@ SCREW_DY  = 17.5              # (*) distance between the two screw posts
 SCREW_EDGE = 4.4              # (*) screw centre to the +X end
 SCREW_D, HEAD_D = 2.2, 3.6    # clearance hole / head counterbore
 SEAT_T    = 2.0               # (*) material under the screw head (= screw length - ~4)
-TONGUE_W  = 9.0               # (*) hinge tongue width on the top shell
-TONGUE_T  = 1.3               # (*) hinge tongue thickness
+LEDGE_W   = 9.0               # hinge ledge on the top shell: width across the end
+LEDGE_IN  = 2.0               # (*) ledge inner edge, measured from the shell's outer face
+LEDGE_T   = 1.2               # (*) ledge thickness (ledge assumed flush with the rim)
 # ---- PCB (estimated) ----
 PCB_T     = 1.0
 PCB_DROP  = 5.7               # (*) seam (base rim) down to PCB top face
-PCB_GAP   = 1.6               # clearance under the PCB (USB-C shell, parts)
+PCB_GAP   = 3.2               # clearance under the PCB (3 mm side button underneath)
 PCB_HOLES = [(5.6, 4.85), (-6.1, -0.8)]   # (*) PCB locating holes (x, y)
 PEG_D     = 1.3
 PCB_Y_BAT = 7.1               # PCB edge on the battery side
 PCB_X_HINGE = -14.2           # PCB edge at the hinge end
 WIN_X     = (-12.0, 11.5)     # combined USB-C + power switch opening along X
-PLUG_X    = (-12.0, 2.0)      # floor relief under the USB-C plug overmold
+BTN_Y     = (-1.5, 5.5)       # (*) access hole in +X end wall for the underside side button
 # ---- box ----
 WALL, FLOOR = 1.6, 1.5
 LIP_H, LIP_T, LIP_CLR = 1.2, 0.9, 0.3
@@ -78,14 +79,17 @@ lip = (cq.Workplane("YZ").polyline([(yw, seam - 2.0 - (yw - yi)), (yi, seam - 2.
        .translate((-8, 0, 0)))
 box = box.union(lip)
 
-# hinge end: pocket for the top-shell tongue + window under a rim bridge for its catch
-tw = TONGUE_W + 1.0
-box = box.cut(slab(-L / 2 + 0.8, -L / 2 + 0.8 + TONGUE_T + 0.8, -tw / 2, tw / 2, seam - 4.5, seam + 1))
-box = box.cut(slab(-L / 2 - 1, -L / 2 + 1, -tw / 2, tw / 2, seam - 4.5, seam - 1.5))
+# hinge end: hook that reaches up inside the top shell and over its ledge
+hx0 = -L / 2 + LEDGE_IN + 0.3; hx1 = hx0 + 1.5; hw = LEDGE_W - 1.0
+ztop = seam + LEDGE_T + 0.3
+box = box.union(slab(hx0, hx1, -hw / 2, hw / 2, zf, ztop + 1.2))
+box = box.union(slab(-L / 2 + WALL - 0.1, hx0 + 0.1, -hw / 2, hw / 2, zf, seam - 1.5))
+box = box.union(slab(hx0 - 1.0, hx0 + 0.1, -hw / 2, hw / 2, ztop, ztop + 1.2)
+                .edges("|Y and >Z and <X").chamfer(0.7))
 
 # USB-C + switch: wall opened up to the rim, floor relieved under the plug
 box = box.cut(slab(WIN_X[0], WIN_X[1], -W / 2 - 1, -W / 2 + WALL + 0.01, zf, seam + 1))
-box = box.cut(slab(PLUG_X[0], PLUG_X[1], -W / 2 - 1, -W / 2 + 2.8, z0 - 1, zf + 1))
+box = box.cut(slab(L / 2 - WALL - 0.5, L / 2 + 1, BTN_Y[0], BTN_Y[1], zf, zpb + 0.3))
 
 cq.exporters.export(box, "/tmp/_box.stl", tolerance=0.01, angularTolerance=0.05)
 cap = trimesh.load("1u.stl")
