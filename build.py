@@ -2,7 +2,7 @@
 
 Replaces the original finger-ring base with an open box that
   * holds the PCB and the 501020 battery (standing on edge beside the PCB),
-  * takes the original top shell: a hinge tab on the end wall goes up into it at one
+  * takes the original top shell: a hinge tab sticks out of the end wall at one
     end, two original screws go in from below at the other end,
   * is fused onto an MX cross-stem low-profile 1u keycap (1u.stl).
 
@@ -36,8 +36,8 @@ SCREW_HEAD = 2.0               # screw head diameter
 SCREW_GRIP = 2.6               # thread left to bite into the top-shell post
 DRIVER_D   = 3.2               # counterbore: head + screwdriver shaft
 TAB_W      = 10.0              # hinge tab width (original base)
-TAB_H      = 1.0               # hinge tab height above the rim (original base)
-TAB_T      = 0.8               # (*) tab thickness; sits 1.0-1.8 from the outer face
+TAB_OUT    = 1.0               # how far the tab sticks out of the wall, inwards
+TAB_T      = 1.2               # (*) tab thickness below the rim plane
 
 # ---- electronics ------------------------------------------------------------
 PCB_T      = 1.0
@@ -119,10 +119,11 @@ def lip():
 
 
 def hinge_tab():
-    """Tab growing out of the -X end wall, up into the top shell's hinge pocket."""
-    x0 = XH + TOP_WALL                     # clear of the shell's outer skin
+    """Ledge sticking out of the -X end wall into the box, flush with the rim.
+    It is free underneath (a 1 mm overhang, printable without support)."""
+    x = (XH + WALL - 0.1, XH + WALL + TAB_OUT)
     y = (-TAB_W / 2 + CLR / 2, TAB_W / 2 - CLR / 2)
-    return slab((x0, x0 + TAB_T), y, (ZF, SEAM + TAB_H))
+    return slab(x, y, (SEAM - TAB_T, SEAM))
 
 
 def usb_opening():
@@ -162,7 +163,7 @@ def validate(box):
         "battery taller than cavity":            SEAM - ZF < bat_h - 1e-6,
         "top-shell rim seat obstructed":
             overlap((XH, XS), (-W / 2, W / 2), (SEAM + 0.01, SEAM + 3))
-            - overlap((XH + TOP_WALL, XS - TOP_WALL - CLR),   # hinge tab enters the shell's pocket
+            - overlap((XH + TOP_WALL + CLR, XS - TOP_WALL - CLR),
                       (-W / 2 + TOP_WALL + CLR, W / 2 - TOP_WALL - CLR),
                       (SEAM + 0.01, SEAM + 3)) > 1e-3,
         "screw head has no seat":                SCREW_HEAD - (SCREW_HEAD - HOLE_CLR) < 0.3,
