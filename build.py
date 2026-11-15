@@ -46,6 +46,7 @@ TAB_OUT    = 1.0               # hinge tabs reach this far in from the wall's in
 TAB_T      = 1.2               # lower hinge tab thickness below the rim plane
 LEDGE_T    = 1.0               # shell hinge ledge thickness (sits between the two tabs)
 CLIP_TOP_T = 1.0               # upper hinge tab thickness
+SUPPORT_D  = 0.8               # print-support pillars in the hinge slot (cut off after printing)
 
 # ---- electronics ------------------------------------------------------------
 PCB_T      = 1.0
@@ -137,7 +138,10 @@ def hinge_clip():
         outline(-SKIRT_OUT, (SEAM, z_slot + CLIP_TOP_T)).cut(outline(-CLR, (SEAM - 1, z_slot + 2))))
     upper = slab((XH - SKIRT_OUT - 1, x_in), y, (z_slot, z_slot + CLIP_TOP_T)).intersect(
         outline(-SKIRT_OUT, (z_slot, z_slot + CLIP_TOP_T)))
-    return lower.union(post).union(upper)
+    clip = lower.union(post).union(upper)
+    for ys in (y[0] + 0.9, 0, y[1] - 0.9):          # left, middle, right; under the tab's free edge
+        clip = clip.union(cyl(x_in - 0.7, ys, SUPPORT_D, (SEAM - 0.1, z_slot + 0.1)))
+    return clip
 
 
 def lips():
