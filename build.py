@@ -63,7 +63,7 @@ BAT_X      = -0.3               # battery centre along X (where the bay is wides
 WALL       = 1.2                # wall inside the rim outline
 FLOOR      = 1.6
 SKIRT_OUT  = 1.2                # wall outside the rim outline, over the full height
-SKIRT_H    = 1.0                # outer lip: that outer part rises this far past the wall top
+SKIRT_H    = 1.0                # outer lip: stands LIP_H + this above the rim, all round
 LIP_H      = 1.3                # wall top raised by this much in three stretches:
 LIP_BOSS_X = 11.5               #   battery side, from the hinge gap to here (short of the boss)
 LIP_END_Y  = 6.0                #   screw end, |y| below this (between the bosses)
@@ -168,14 +168,13 @@ def hinge():
 
 def lips():
     """Everything above the rim plane except the hinge: the wall top raised by LIP_H
-    in three stretches, and the outer lip standing SKIRT_H above the wall top all
-    round, outside the shell."""
+    in three stretches, and the outer lip, which stands LIP_H + SKIRT_H above the rim
+    all the way round, outside the shell."""
     raised = (slab((XH - 3, WIN_X[0]), (YU - 3, -HINGE_GAP / 2), ABOVE)          # USB-side corner
               .union(slab((XH - 3, LIP_BOSS_X), (HINGE_GAP / 2, YB + 3), ABOVE))  # battery side
               .union(slab((XS - 6, XS + 3), (-LIP_END_Y, LIP_END_Y), ABOVE)))     # screw end
-    high = (ring(WALL, -SKIRT_OUT, (SEAM, SEAM + LIP_H))
-            .union(ring(-CLR, -SKIRT_OUT, (SEAM, SEAM + LIP_H + SKIRT_H)))).intersect(raised)
-    return high.union(ring(-CLR, -SKIRT_OUT, (SEAM, SEAM + SKIRT_H)))
+    wall_top = ring(WALL, -SKIRT_OUT, (SEAM, SEAM + LIP_H)).intersect(raised)
+    return wall_top.union(ring(-CLR, -SKIRT_OUT, (SEAM, SEAM + LIP_H + SKIRT_H)))
 
 
 def openings():
