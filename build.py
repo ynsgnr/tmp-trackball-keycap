@@ -24,7 +24,6 @@ import json
 
 import cadquery as cq
 import trimesh
-from shapely.affinity import translate
 from shapely.geometry import Polygon, box as rect
 
 # ---- FDM tolerances (0.4 mm nozzle, 0.2 mm layers) -------------------------
@@ -43,12 +42,10 @@ SCREW_HEAD = 2.0               # screw head diameter
 SCREW_GRIP = 2.6               # thread left to bite into the top-shell post
 DRIVER_D   = 3.2               # counterbore: head + screwdriver shaft
 TAB_W      = 10.0              # hinge tab width (original base)
+TAB_OUT    = 1.0               # hinge tabs reach this far in from the wall's inner face
 TAB_T      = 1.2               # lower hinge tab thickness below the rim plane
-LEDGE_IN   = 2.4               # (*) shell hinge ledge: inner edge from the shell's outer face
-LEDGE_T    = 1.0               # shell hinge ledge thickness
-CLIP_UP_T  = 1.2               # upright joining the lower and upper hinge tabs
+LEDGE_T    = 1.0               # shell hinge ledge thickness (sits between the two tabs)
 CLIP_TOP_T = 1.0               # upper hinge tab thickness
-CLIP_GRIP  = 1.0               # how far the upper tab reaches back over the ledge
 
 # ---- electronics ------------------------------------------------------------
 PCB_T      = 1.0
@@ -129,30 +126,18 @@ def pcb_supports():
 
 
 def hinge_clip():
-    """C-shaped hinge at the -X end: the lower tab sticks out of the wall flush with
-    the rim, an upright rises from its inner edge and an upper tab points back out.
-    The shell's hinge ledge slides into the slot between the tabs (see SLIDE)."""
+    """Hinge at the -X end, stacked in z: the lower tab sticks out of the wall flush
+    with the rim, then a gap for the shell's hinge ledge, then an upper tab that comes
+    inwards out of the outer lip (which is raised locally to carry it)."""
     y = (-TAB_W / 2 + CLR / 2, TAB_W / 2 - CLR / 2)
-    x_up = XH + LEDGE_IN + CLR                      # upright, just inboard of the ledge
+    x_in = XH + WALL + TAB_OUT
     z_slot = SEAM + LEDGE_T + 2 * CLR               # 0.2 fit + 0.2 for overhang sag
-    lower = slab((XH + WALL - 0.1, x_up + CLIP_UP_T), y, (SEAM - TAB_T, SEAM))
-    upright = slab((x_up, x_up + CLIP_UP_T), y, (SEAM - TAB_T, z_slot + CLIP_TOP_T))
-    upper = slab((XH + LEDGE_IN - CLIP_GRIP, x_up + 0.1), y, (z_slot, z_slot + CLIP_TOP_T))
-    return lower.union(upright).union(upper)
-
-
-SLIDE = CLIP_GRIP + CLR + 0.1       # the shell goes on this far towards -X, then slides in
-
-
-def slide_relief():
-    """Removes whatever stands outside the shell above the rim plane near the hinge
-    end, as far along as the shell needs to sit SLIDE mm outwards before sliding in."""
-    shifted = translate(RIM, -SLIDE, 0).exterior
-    pts = [shifted.interpolate(i / 2000, normalized=True) for i in range(2000)]
-    x_end = max(p.x for p in pts if not RIM.buffer(CLR).contains(p)) + SLIDE + 0.5
-    z = (SEAM, SEAM + 5)
-    return slab((XH - SKIRT_OUT - 1, x_end), (YU - SKIRT_OUT - 1, YB + SKIRT_OUT + 1), z).cut(
-        outline(0, (SEAM - 1, SEAM + 6))), x_end
+    lower = slab((XH + WALL - 0.1, x_in), y, (SEAM - TAB_T, SEAM))
+    post = slab((XH - SKIRT_OUT - 1, XH + 3), y, (SEAM, z_slot + CLIP_TOP_T)).intersect(
+        outline(-SKIRT_OUT, (SEAM, z_slot + CLIP_TOP_T)).cut(outline(-CLR, (SEAM - 1, z_slot + 2))))
+    upper = slab((XH - SKIRT_OUT - 1, x_in), y, (z_slot, z_slot + CLIP_TOP_T)).intersect(
+        outline(-SKIRT_OUT, (z_slot, z_slot + CLIP_TOP_T)))
+    return lower.union(post).union(upper)
 
 
 def lips():
@@ -188,7 +173,7 @@ def button_opening():
 def build():
     bosses, holes = screw_bosses()
     box = shell().union(bosses).union(pcb_supports()).union(hinge_clip()).union(lips())
-    return box.cut(slide_relief()[0]).cut(holes).cut(usb_opening()).cut(button_opening())
+    return box.cut(holes).cut(usb_opening()).cut(button_opening())
 
 
 def keycap_cad():
@@ -237,8 +222,7 @@ def validate(box):
         print(("FAIL  " if failed else "ok    ") + name)
     print(f"rim outline {XS - XH:.1f} x {YB - YU:.1f}; levels: floor {Z0:.1f}-{ZF:.1f}, "
           f"PCB seat {ZPCB:.1f}, rim {SEAM:.1f}; PCB-wall gap {room.exterior.distance(Polygon(PCB_SHAPE)) + CLR:.2f}, "
-          f"battery-wall gap {room.exterior.distance(bat) + CLR:.2f}; shell slides in {SLIDE:.1f}, "
-          f"outer lip removed for x < {slide_relief()[1]:.1f}")
+          f"battery-wall gap {room.exterior.distance(bat) + CLR:.2f}")
     return not any(checks.values())
 
 
