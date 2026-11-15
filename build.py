@@ -53,11 +53,12 @@ PCB_X      = (-14.2, 14.8)     # (*) PCB extent along X
 PCB_Y      = (-11.75, 7.1)     # (*) PCB extent along Y
 PCB_SHAPE  = [(-14.2, 6.3), (-13.4, 7.1), (11, 7.1), (11, 4.85), (14.8, 4.85), (14.8, -6.2),
               (11.2, -6.2), (11.2, -11.75), (-9.6, -11.75), (-14.2, -4.9)]   # (*)
-PCB_HOLES  = [(5.6, 4.85), (-6.1, -0.8)]   # (*) locating holes, ~1.7 mm
-PEG_D      = 1.2               # loose on purpose: hole positions are +-0.5
+PCB_HOLES  = [(5.6, 4.85), (-7.1, -0.8)]   # locating holes (second one moved after test fit)
+PEG_D      = 0.8               # 1.2 printed too fat for the PCB holes
 BATTERY    = (20.0, 5.2, 10.0) # length, width, height standing on edge
 BAT_X      = -0.3              # battery centre along X (where the bay is widest)
 WIN_X      = (-12.0, 11.5)     # (*) USB-C + power switch opening along X
+SILL_H     = 4.0               # wall left under that opening, from the box underside
 BTN_Y      = (-1.5, 5.5)       # (*) access to the underside button, +X wall
 
 # ---- box --------------------------------------------------------------------
@@ -65,6 +66,9 @@ WALL, FLOOR = 1.2, 1.6         # 1.2 wall: the battery needs the room at the cor
 LIP_H      = 1.3               # wall raised by this much in the lip areas
 LIP_BOSS_X = 11.5              # battery-side lip stops here, short of the screw boss
 LIP_END_Y  = 6.0               # screw-end lip spans |y| < this, between the bosses
+HINGE_GAP  = 12.0              # unraised width at the hinge tab (tab + 1 mm each side)
+SKIRT_OUT  = 1.2               # outer wall grows outwards by this, over its full height
+SKIRT_H    = 1.0               # ...and rises this far above the wall top, round the shell
 
 # ---- keycap (1u.stl: 18 x 18 x 4.8, flat top, 1 mm ceiling) ----------------
 KEY, CAP_TOP, OVERLAP = 18.0, 4.8, 0.4
@@ -95,7 +99,7 @@ def outline(inset, z):
 
 
 def shell():
-    return outline(0, (Z0, SEAM)).cut(outline(WALL, (ZF, SEAM + 1)))
+    return outline(-SKIRT_OUT, (Z0, SEAM)).cut(outline(WALL, (ZF, SEAM + 1)))
 
 
 def screw_bosses():
@@ -128,32 +132,39 @@ def hinge_tab():
 
 
 def lips():
-    """Wall raised by LIP_H in three stretches: hinge-end corner on the USB side
-    (opening to tab), tab round the battery side to the boss, and between the bosses."""
-    ring = outline(0, (SEAM, SEAM + LIP_H)).cut(outline(WALL, (SEAM - 1, SEAM + LIP_H + 1)))
-    z = (SEAM - 1, SEAM + LIP_H + 1)
-    where = (slab((XH - 1, WIN_X[0]), (YU - 1, -TAB_W / 2), z)
-             .union(slab((XH - 1, LIP_BOSS_X), (TAB_W / 2, YB + 1), z))
-             .union(slab((XS - 6, XS + 1), (-LIP_END_Y, LIP_END_Y), z)))
-    return ring.intersect(where)
+    """Everything above the rim plane.  The wall is raised by LIP_H in three stretches
+    (hinge-end corner on the USB side, hinge round the battery side to the boss, and
+    between the bosses).  Outside the shell an outer skirt stands SKIRT_H above the
+    wall top everywhere, so it covers the seam."""
+    top = SEAM + LIP_H + SKIRT_H
+    z = (SEAM - 1, top + 1)
+    raised = (slab((XH - 3, WIN_X[0]), (YU - 3, -HINGE_GAP / 2), z)
+              .union(slab((XH - 3, LIP_BOSS_X), (HINGE_GAP / 2, YB + 3), z))
+              .union(slab((XS - 6, XS + 3), (-LIP_END_Y, LIP_END_Y), z)))
+    wall = outline(-SKIRT_OUT, (SEAM, SEAM + LIP_H)).cut(outline(WALL, z)).intersect(raised)
+    skirt_ring = outline(-SKIRT_OUT, (SEAM, top)).cut(outline(-CLR, z))
+    skirt = skirt_ring.intersect(raised).union(
+        outline(-SKIRT_OUT, (SEAM, SEAM + SKIRT_H)).cut(outline(-CLR, z)))
+    return wall.union(skirt)
 
 
 def usb_opening():
-    """Removes the -Y wall over WIN_X through its full thickness, so the wall ends
-    are clean full-height faces even where the wall starts to curve."""
-    wall_only = slab((XH - 1, XS + 1), (YU - 1, YU + 6), (ZF, SEAM + 1)).cut(
-        outline(WALL, (ZF - 1, SEAM + 2)))
-    return slab(WIN_X, (YU - 1, YU + 6), (ZF, SEAM + 1)).intersect(wall_only)
+    """Removes the -Y wall (and skirt) over WIN_X above the sill, through its full
+    thickness, so the wall ends are clean faces even where the wall curves."""
+    z = (Z0 + SILL_H, SEAM + LIP_H + SKIRT_H + 1)
+    y = (YU - SKIRT_OUT - 1, YU + 6)
+    wall_only = slab((XH - 3, XS + 3), y, z).cut(outline(WALL, (z[0] - 1, z[1] + 1)))
+    return slab(WIN_X, y, z).intersect(wall_only)
 
 
 def button_opening():
-    return slab((XS - WALL - 1.0, XS + 1), BTN_Y, (ZF, ZPCB + 0.4))
+    return slab((XS - WALL - 1.0, XS + SKIRT_OUT + 1), BTN_Y, (ZF, ZPCB + 0.4))
 
 
 def build():
     bosses, holes = screw_bosses()
-    box = shell().cut(usb_opening()).union(bosses).union(pcb_supports()).union(hinge_tab()).union(lips())
-    return box.cut(holes).cut(button_opening())
+    box = shell().union(bosses).union(pcb_supports()).union(hinge_tab()).union(lips())
+    return box.cut(holes).cut(usb_opening()).cut(button_opening())
 
 
 def keycap_cad():
@@ -170,7 +181,7 @@ def keycap_cad():
     stem = cyl(0, 0, 5.5, (0, CAP_TOP - 0.5))
     cross = slab((-2.2, 2.2), (-0.71, 0.71), (-1, CAP_TOP - 1.0)).union(
         slab((-0.71, 0.71), (-2.2, 2.2), (-1, CAP_TOP - 1.0)))
-    return cap.union(stem.cut(cross)).translate((XH + KEY / 2, YB - KEY / 2, 0))
+    return cap.union(stem.cut(cross)).translate((XH - SKIRT_OUT + KEY / 2, YB + SKIRT_OUT - KEY / 2, 0))
 
 
 def validate(box):
@@ -192,7 +203,7 @@ def validate(box):
             overlap(slab((bat.bounds[0], bat.bounds[2]), (bat.bounds[1], bat.bounds[3]),
                          (ZF + 0.01, ZF + bat_h))) > 1e-3,
         "battery taller than cavity":                SEAM - ZF < bat_h - 1e-6,
-        "something sticks up past the lips":         solid.BoundingBox().zmax > SEAM + LIP_H + 1e-6,
+        "something sticks up past the lips":         solid.BoundingBox().zmax > SEAM + LIP_H + SKIRT_H + 1e-6,
         "screw boss outside the rim outline":
             not RIM.buffer(-0.8).contains(rect(XS - SCREW_EDGE - 0.1, -SCREW_DY / 2,
                                                XS - SCREW_EDGE + 0.1, SCREW_DY / 2)),
@@ -213,7 +224,8 @@ if __name__ == "__main__":
                                                  "showAxes": False, "width": 900, "height": 600})
     cap = trimesh.load("1u.stl")
     c = cap.bounds.mean(axis=0)
-    cap.apply_translation([XH + KEY / 2 - c[0], YB - KEY / 2 - c[1], -cap.bounds[0][2]])
+    cap.apply_translation([XH - SKIRT_OUT + KEY / 2 - c[0], YB + SKIRT_OUT - KEY / 2 - c[1],
+                           -cap.bounds[0][2]])
     out = trimesh.boolean.union([cap, trimesh.load("/tmp/_box.stl")], engine="manifold")
     print("bounds", out.bounds.round(2).tolist(), "watertight", out.is_watertight,
           "bodies", out.body_count)
