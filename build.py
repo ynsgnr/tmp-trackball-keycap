@@ -6,8 +6,8 @@ Replaces the original finger-ring base with an open box that
     end, two original screws go in from below at the other end,
   * is fused onto an MX cross-stem low-profile 1u keycap (1u.stl).
 
-Run:   python3 build.py   ->  trackball_mount.stl (with keycap),
-       trackball_base_plain.stl (box only), preview.svg   (units: mm)
+Run:   python3 build.py   ->  trackball_mount.stl/.step (with keycap),
+       trackball_base_plain.stl/.step (box only), preview.svg   (units: mm)
 Print: upright (stem down), 0.4 mm nozzle / 0.2 mm layers, supports from the
        build plate only.
 
@@ -156,6 +156,23 @@ def build():
     return box.cut(holes).cut(button_opening())
 
 
+def keycap_cad():
+    """Native re-model of 1u.stl (for STEP export): 18 mm cap, straight skirt then a
+    tapered top, 1 mm ceiling, 5.5 mm stem with a 4.4 x 1.42 mm cross."""
+    def rrect(size, r, z):
+        return cq.Sketch().rect(size, size).vertices().fillet(r).moved(cq.Location((0, 0, z)))
+    def body(size, r, z_straight, z_top, slope=0.45):
+        top = size - 2 * slope * (z_top - z_straight)
+        low = cq.Workplane("XY").placeSketch(rrect(size, r, 0)).extrude(z_straight)
+        return low.union(cq.Workplane("XY").placeSketch(rrect(size, r, z_straight),
+                                                         rrect(top, r, z_top)).loft())
+    cap = body(KEY, 1.5, 1.5, CAP_TOP).cut(body(KEY - 2.0, 0.5, 1.27, CAP_TOP - 1.0))
+    stem = cyl(0, 0, 5.5, (0, CAP_TOP - 0.5))
+    cross = slab((-2.2, 2.2), (-0.71, 0.71), (-1, CAP_TOP - 1.0)).union(
+        slab((-0.71, 0.71), (-2.2, 2.2), (-1, CAP_TOP - 1.0)))
+    return cap.union(stem.cut(cross)).translate((XH + KEY / 2, YB - KEY / 2, 0))
+
+
 def validate(box):
     """Check that the PCB and battery have room and nothing sticks up past the lips."""
     solid = box.val()
@@ -207,3 +224,8 @@ if __name__ == "__main__":
     assert plain.is_watertight and plain.body_count == 1
     plain.export("trackball_base_plain.stl")
     print("plain bounds", plain.bounds.round(2).tolist())
+    # native CAD (STEP) for SolidWorks etc.; the keycap there is a re-model of 1u.stl
+    cq.exporters.export(box.translate((0, 0, -Z0)), "trackball_base_plain.step")
+    kc = keycap_cad()
+    print("keycap re-model volume %.1f vs 1u.stl %.1f mm3" % (kc.val().Volume(), cap.volume))
+    cq.exporters.export(box.union(kc), "trackball_mount.step")
