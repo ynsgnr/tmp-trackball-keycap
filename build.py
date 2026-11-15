@@ -68,7 +68,7 @@ WALL, FLOOR = 1.2, 1.6         # 1.2 wall: the battery needs the room at the cor
 LIP_H      = 1.3               # wall raised by this much in the lip areas
 LIP_BOSS_X = 11.5              # battery-side lip stops here, short of the screw boss
 LIP_END_Y  = 6.0               # screw-end lip spans |y| < this, between the bosses
-HINGE_GAP  = 12.0              # unraised width at the hinge tab (tab + 1 mm each side)
+HINGE_GAP  = 14.0              # unraised width at the hinge tab (tab + 2 mm each side)
 SKIRT_OUT  = 1.2               # outer wall grows outwards by this, over its full height
 SKIRT_H    = 1.0               # ...and rises this far above the wall top, round the shell
 
