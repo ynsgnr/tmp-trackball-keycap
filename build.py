@@ -62,6 +62,9 @@ BTN_Y      = (-1.5, 5.5)       # (*) access to the underside button, +X wall
 
 # ---- box --------------------------------------------------------------------
 WALL, FLOOR = 1.2, 1.6         # 1.2 wall: the battery needs the room at the corners
+LIP_H      = 1.3               # wall raised by this much in the lip areas
+LIP_BOSS_X = 11.5              # battery-side lip stops here, short of the screw boss
+LIP_END_Y  = 6.0               # screw-end lip spans |y| < this, between the bosses
 
 # ---- keycap (1u.stl: 18 x 18 x 4.8, flat top, 1 mm ceiling) ----------------
 KEY, CAP_TOP, OVERLAP = 18.0, 4.8, 0.4
@@ -124,6 +127,17 @@ def hinge_tab():
     return slab(x, y, (SEAM - TAB_T, SEAM))
 
 
+def lips():
+    """Wall raised by LIP_H in three stretches: hinge-end corner on the USB side
+    (opening to tab), tab round the battery side to the boss, and between the bosses."""
+    ring = outline(0, (SEAM, SEAM + LIP_H)).cut(outline(WALL, (SEAM - 1, SEAM + LIP_H + 1)))
+    z = (SEAM - 1, SEAM + LIP_H + 1)
+    where = (slab((XH - 1, WIN_X[0]), (YU - 1, -TAB_W / 2), z)
+             .union(slab((XH - 1, LIP_BOSS_X), (TAB_W / 2, YB + 1), z))
+             .union(slab((XS - 6, XS + 1), (-LIP_END_Y, LIP_END_Y), z)))
+    return ring.intersect(where)
+
+
 def usb_opening():
     """Removes the -Y wall over WIN_X through its full thickness, so the wall ends
     are clean full-height faces even where the wall starts to curve."""
@@ -138,12 +152,12 @@ def button_opening():
 
 def build():
     bosses, holes = screw_bosses()
-    box = shell().cut(usb_opening()).union(bosses).union(pcb_supports()).union(hinge_tab())
+    box = shell().cut(usb_opening()).union(bosses).union(pcb_supports()).union(hinge_tab()).union(lips())
     return box.cut(holes).cut(button_opening())
 
 
 def validate(box):
-    """Check that the PCB and battery have room and nothing sticks up past the rim."""
+    """Check that the PCB and battery have room and nothing sticks up past the lips."""
     solid = box.val()
     def overlap(other):
         return solid.intersect(other.val()).Volume()
@@ -161,7 +175,7 @@ def validate(box):
             overlap(slab((bat.bounds[0], bat.bounds[2]), (bat.bounds[1], bat.bounds[3]),
                          (ZF + 0.01, ZF + bat_h))) > 1e-3,
         "battery taller than cavity":                SEAM - ZF < bat_h - 1e-6,
-        "something sticks up past the rim":          solid.BoundingBox().zmax > SEAM + 1e-6,
+        "something sticks up past the lips":         solid.BoundingBox().zmax > SEAM + LIP_H + 1e-6,
         "screw boss outside the rim outline":
             not RIM.buffer(-0.8).contains(rect(XS - SCREW_EDGE - 0.1, -SCREW_DY / 2,
                                                XS - SCREW_EDGE + 0.1, SCREW_DY / 2)),
