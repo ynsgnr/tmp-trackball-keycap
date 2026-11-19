@@ -21,7 +21,9 @@ The keycap sits under the -X/+Y corner, so the box only overhangs towards +X
 and -Y (off the keyboard).  Mirror in the slicer for the opposite corner.
 
 The wall follows the top shell's rim outline in outline.json, traced from the
-underside photo and scan by fit_outline.py.  Numbers marked (*) are estimated
+underside photo and scan by fit_outline.py.  The PCB holes were measured on
+the original base (ref/original_base.jpg) against its screw posts and checked
+against the test fit (ref/pcb_test_fit.webp).  Numbers marked (*) are estimated
 from photos; the rest was measured or set from test prints.
 """
 import json
@@ -50,18 +52,24 @@ LEDGE_T    = 1.0                # shell's hinge ledge thickness
 
 # ---- electronics ------------------------------------------------------------
 PCB_T      = 1.0
-PCB_DROP   = 5.8                # (*) rim down to the PCB top face
+PCB_FROM_TOP = 4.6              # highest point of the case down to the PCB top face
+                                # (measured: sets the gap between trackball and sensor)
 PCB_UNDER  = 3.0                # tallest part under the PCB (side button)
-PCB_SHAPE  = [(-14.2, 6.3), (-13.4, 7.1), (11, 7.1), (11, 4.85), (14.8, 4.85), (14.8, -6.2),
-              (11.2, -6.2), (11.2, -11.75), (-9.6, -11.75), (-14.2, -4.9)]   # (*) outline
-PCB_HOLES  = [(5.6, 4.85), (-7.1, -0.8)]            # locating holes, ~1.7 mm
-PEG_D      = 0.8                # peg in those holes
-BATTERY    = (20.0, 5.2, 10.0)  # length, width, height standing on edge
-BAT_X      = -0.3               # battery centre along X (where the bay is widest)
+PCB_SHIFT  = (0.05, 0.80)       # correction to the first outline estimate (from the holes)
+PCB_SHAPE  = [(x + PCB_SHIFT[0], y + PCB_SHIFT[1]) for x, y in
+              [(-14.2, 6.3), (-13.4, 7.1), (11, 7.1), (11, 4.85), (14.8, 4.85), (14.8, -6.2),
+               (11.2, -6.2), (11.2, -11.75), (-9.6, -11.75), (-14.2, -4.9)]]   # (*) outline
+PCB_HOLES  = [(5.57, 5.66), (-6.96, -0.01)]         # locating holes, ~2.0 mm: measured on
+                                # the original base (ref/original_base.jpg) against its screws
+PEG_D      = 1.0                # peg in those holes: 0.5 mm slack all round
+BATTERY    = (20.0, 5.2, 10.0)  # length, width, height standing on edge; seen from
+                                # above the pouch has fully rounded ends
+BAT_X      = 0.0                # battery centre along X (where the bay is widest)
 
 # ---- box --------------------------------------------------------------------
 WALL       = 1.2                # wall inside the rim outline
 FLOOR      = 1.6
+CAVITY     = 10.0               # floor top to rim plane (the battery stands 10 mm tall)
 SKIRT_OUT  = 1.2                # wall outside the rim outline, over the full height
 SKIRT_H    = 1.0                # outer lip: stands LIP_H + this above the rim, all round
 LIP_H      = 1.3                # wall top raised by this much in three stretches:
@@ -70,7 +78,7 @@ LIP_END_Y  = 6.0                #   screw end, |y| below this (between the bosse
 HINGE_GAP  = 14.0               #   ...and not within this width at the hinge
 WIN_X      = (-12.0, 11.5)      # USB-C + power switch opening along X
 SILL_H     = 4.0                # wall left under that opening, from the box underside
-BTN_Y      = (-1.5, 5.5)        # (*) access hole for the underside button, +X wall
+BTN_Y      = (-1.5 + PCB_SHIFT[1], 5.5 + PCB_SHIFT[1])   # (*) underside-button access, +X wall
 
 # ---- hinge (at the -X end, stacked in z) ------------------------------------
 TAB_W      = 10.0               # width of both tabs
@@ -85,10 +93,10 @@ KEY, CAP_TOP, OVERLAP = 18.0, 4.8, 0.4
 # ---- derived ----------------------------------------------------------------
 Z0     = CAP_TOP - OVERLAP                  # underside of the floor
 ZF     = Z0 + FLOOR                         # floor top
-ZPCB   = ZF + PCB_UNDER + CLR               # PCB underside
-SEAM   = ZPCB + PCB_T + PCB_DROP            # rim plane; the top shell sits here
+SEAM   = ZF + CAVITY                        # rim plane; the top shell sits here
 Z_SLOT = SEAM + LEDGE_T + CLR + SAG         # underside of the upper hinge tab
-Z_TOP  = SEAM + max(LIP_H + SKIRT_H, Z_SLOT - SEAM + CLIP_TOP_T)
+Z_TOP  = SEAM + max(LIP_H + SKIRT_H, Z_SLOT - SEAM + CLIP_TOP_T)   # highest point
+ZPCB   = Z_TOP - PCB_FROM_TOP - PCB_T       # PCB underside
 PCB_X0 = min(x for x, _ in PCB_SHAPE)       # PCB edge at the hinge end
 PCB_Y1 = max(y for _, y in PCB_SHAPE)       # PCB edge on the battery side
 KEY_XY = (XH - SKIRT_OUT + KEY / 2, YB + SKIRT_OUT - KEY / 2)   # keycap centre
@@ -182,7 +190,7 @@ def openings():
     their full thickness so the ends are clean faces.  Plus the side-button hole."""
     z = (Z0 + SILL_H, Z_TOP + 1)
     usb = slab(WIN_X, (YU - SKIRT_OUT - 1, YU + 6), z).intersect(ring(WALL, OUTSIDE, z))
-    button = slab((XS - WALL - 1.0, XS + SKIRT_OUT + 1), BTN_Y, (ZF, ZPCB + 0.4))
+    button = slab((XS - WALL - 1.0, XS + SKIRT_OUT + 1), BTN_Y, (ZPCB - PCB_UNDER - 0.4, ZPCB + 0.4))
     return usb.union(button)
 
 
@@ -222,7 +230,9 @@ def validate(box):
     bat_l, bat_w, bat_h = BATTERY
     room = RIM.buffer(-WALL - CLR)                       # usable floor plan
     pcb_plan = Polygon(PCB_SHAPE)
-    bat = rect(BAT_X - bat_l / 2, PCB_Y1 + CLR, BAT_X + bat_l / 2, PCB_Y1 + CLR + bat_w)
+    r = bat_w / 2
+    bat = rect(BAT_X - bat_l / 2 + r, PCB_Y1 + CLR + r, BAT_X + bat_l / 2 - r,
+               PCB_Y1 + CLR + r + 1e-3).buffer(r, 32)            # top view: stadium
     pcb = (cq.Workplane("XY").workplane(offset=ZPCB + 0.01).polyline(PCB_SHAPE).close()
            .extrude(PCB_T - 0.01))
     pegs = len(PCB_HOLES) * 3.1416 * PEG_D ** 2 / 4 * (PCB_T - 0.01)
@@ -234,8 +244,11 @@ def validate(box):
         "PCB touches only its pegs":           overlap(pcb) - pegs > 0.01,
         "battery fits inside the walls":     not room.contains(bat),
         "battery touches nothing":
-            overlap(slab(bat.bounds[0::2], bat.bounds[1::2], (ZF + 0.01, ZF + bat_h))) > 1e-3,
+            overlap(cq.Workplane("XY").workplane(offset=ZF + 0.01)
+                    .polyline(list(bat.exterior.coords)[:-1]).close().extrude(bat_h - 0.02)) > 1e-3,
         "battery fits under the rim":        SEAM - ZF < bat_h - 1e-6,
+        "PCB top is PCB_FROM_TOP below the highest point":
+            abs(solid.BoundingBox().zmax - (ZPCB + PCB_T) - PCB_FROM_TOP) > 1e-3,
         "outer lip leaves room for the shell wall":
             overlap(shell_wall.cut(hinge_zone).cut(ring(WALL, OUTSIDE, (SEAM, SEAM + LIP_H)))) > 1e-3,
         "nothing sticks up too far":           solid.BoundingBox().zmax > Z_TOP + 1e-6,
@@ -248,7 +261,7 @@ def validate(box):
     for name, failed in failures.items():
         print(("FAIL  " if failed else "ok    ") + name)
     print(f"rim outline {XS - XH:.1f} x {YB - YU:.1f}; floor {Z0:.1f}-{ZF:.1f}, PCB seat {ZPCB:.1f}, "
-          f"rim {SEAM:.1f}, top {Z_TOP:.1f}; PCB-wall gap {room.exterior.distance(pcb_plan) + CLR:.2f}, "
+          f"PCB top {ZPCB + PCB_T:.1f}, rim {SEAM:.1f}, top {Z_TOP:.1f}; PCB-wall gap {room.exterior.distance(pcb_plan) + CLR:.2f}, "
           f"battery-wall gap {room.exterior.distance(bat) + CLR:.2f}")
     return not any(failures.values())
 
