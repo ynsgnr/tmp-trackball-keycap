@@ -62,14 +62,15 @@ PCB_SHAPE  = [(x + PCB_SHIFT[0], y + PCB_SHIFT[1]) for x, y in
 PCB_HOLES  = [(5.57, 5.66), (-6.96, -0.01)]         # locating holes, ~2.0 mm: measured on
                                 # the original base (ref/original_base.jpg) against its screws
 PEG_D      = 1.0                # peg in those holes: 0.5 mm slack all round
-BATTERY    = (20.0, 5.2, 10.0)  # length, width, height standing on edge; seen from
+BATTERY    = (20.0, 5.2, 9.0)   # length, width, height standing on edge; seen from
                                 # above the pouch has fully rounded ends
 BAT_X      = 0.0                # battery centre along X (where the bay is widest)
 
 # ---- box --------------------------------------------------------------------
 WALL       = 1.2                # wall inside the rim outline
 FLOOR      = 1.6
-CAVITY     = 10.0               # floor top to rim plane (the battery stands 10 mm tall)
+CAVITY     = 7.8                # floor top to rim plane: the 9 mm battery ends 0.1 mm
+                                # under the raised wall top the shell sits on
 SKIRT_OUT  = 1.2                # wall outside the rim outline, over the full height
 SKIRT_H    = 1.0                # outer lip: stands LIP_H + this above the rim, all round
 LIP_H      = 1.3                # wall top raised by this much in three stretches:
@@ -246,7 +247,8 @@ def validate(box):
         "battery touches nothing":
             overlap(cq.Workplane("XY").workplane(offset=ZF + 0.01)
                     .polyline(list(bat.exterior.coords)[:-1]).close().extrude(bat_h - 0.02)) > 1e-3,
-        "battery fits under the rim":        SEAM - ZF < bat_h - 1e-6,
+        "room under the PCB for its parts":  ZPCB - ZF < PCB_UNDER + CLR - 1e-6,
+        "battery stays under the top shell": ZF + bat_h > SEAM + LIP_H - 0.1 + 1e-6,
         "PCB top is PCB_FROM_TOP below the highest point":
             abs(solid.BoundingBox().zmax - (ZPCB + PCB_T) - PCB_FROM_TOP) > 1e-3,
         "outer lip leaves room for the shell wall":
@@ -261,7 +263,7 @@ def validate(box):
     for name, failed in failures.items():
         print(("FAIL  " if failed else "ok    ") + name)
     print(f"rim outline {XS - XH:.1f} x {YB - YU:.1f}; floor {Z0:.1f}-{ZF:.1f}, PCB seat {ZPCB:.1f}, "
-          f"PCB top {ZPCB + PCB_T:.1f}, rim {SEAM:.1f}, top {Z_TOP:.1f}; PCB-wall gap {room.exterior.distance(pcb_plan) + CLR:.2f}, "
+          f"PCB top {ZPCB + PCB_T:.1f} ({ZPCB - ZF:.1f} free under it), rim {SEAM:.1f}, top {Z_TOP:.1f}; PCB-wall gap {room.exterior.distance(pcb_plan) + CLR:.2f}, "
           f"battery-wall gap {room.exterior.distance(bat) + CLR:.2f}")
     return not any(failures.values())
 
