@@ -61,9 +61,10 @@ PCB_SHIFT  = (-0.95, 0.80)      # correction to the first outline estimate (hole
 PCB_SHAPE  = [(x + PCB_SHIFT[0], y + PCB_SHIFT[1]) for x, y in
               [(-14.2, 6.3), (-13.4, 7.1), (11, 7.1), (11, 4.85), (14.8, 4.85), (14.8, -6.2),
                (11.2, -6.2), (11.2, -11.75), (-9.6, -11.75), (-14.2, -4.9)]]   # (*) outline
-PCB_HOLES  = [(4.57, 5.66), (-7.96, -0.01)]         # locating holes, ~2.0 mm: measured on
+PCB_HOLES  = [(4.57, 5.66), (-7.96, 0.99)]          # locating holes, ~2.0 mm: measured on
                                 # the original base (ref/original_base.jpg) against its screws,
-                                # then moved 1 mm towards the hinge after a test fit
+                                # then moved 1 mm towards the hinge after a test fit, and the
+                                # hinge-side one 1 mm towards the battery after another
 USB_X      = (-10.0, -2.4)      # USB-C shell across X, measured on ref/pcb_test_fit.webp
 USB_Y0     = -12.6              # USB-C mouth (it overhangs the PCB edge)
 USB_BELOW  = 1.6                # how far the shell reaches below the PCB underside
