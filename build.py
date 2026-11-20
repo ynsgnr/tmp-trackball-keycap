@@ -52,15 +52,18 @@ LEDGE_T    = 1.0                # shell's hinge ledge thickness
 
 # ---- electronics ------------------------------------------------------------
 PCB_T      = 1.0
-PCB_FROM_TOP = 4.6              # highest point of the case down to the PCB top face
-                                # (measured: sets the gap between trackball and sensor)
+PCB_SEAT   = 4.6                # floor top up to the PCB underside (set by test fits)
 PCB_UNDER  = 3.0                # tallest part under the PCB (side button)
-PCB_SHIFT  = (0.05, 0.80)       # correction to the first outline estimate (from the holes)
+PCB_SHIFT  = (-0.95, 0.80)      # correction to the first outline estimate (holes + test fit)
 PCB_SHAPE  = [(x + PCB_SHIFT[0], y + PCB_SHIFT[1]) for x, y in
               [(-14.2, 6.3), (-13.4, 7.1), (11, 7.1), (11, 4.85), (14.8, 4.85), (14.8, -6.2),
                (11.2, -6.2), (11.2, -11.75), (-9.6, -11.75), (-14.2, -4.9)]]   # (*) outline
-PCB_HOLES  = [(5.57, 5.66), (-6.96, -0.01)]         # locating holes, ~2.0 mm: measured on
-                                # the original base (ref/original_base.jpg) against its screws
+PCB_HOLES  = [(4.57, 5.66), (-7.96, -0.01)]         # locating holes, ~2.0 mm: measured on
+                                # the original base (ref/original_base.jpg) against its screws,
+                                # then moved 1 mm towards the hinge after a test fit
+USB_X      = (-10.0, -2.4)      # USB-C shell across X, measured on ref/pcb_test_fit.webp
+USB_Y0     = -12.6              # USB-C mouth (it overhangs the PCB edge)
+USB_BELOW  = 1.6                # how far the shell reaches below the PCB underside
 PEG_D      = 1.0                # peg in those holes: 0.5 mm slack all round
 BATTERY    = (20.0, 5.2, 9.0)   # length, width, height standing on edge; seen from
                                 # above the pouch has fully rounded ends
@@ -69,8 +72,7 @@ BAT_X      = 0.0                # battery centre along X (where the bay is wides
 # ---- box --------------------------------------------------------------------
 WALL       = 1.2                # wall inside the rim outline
 FLOOR      = 1.6
-CAVITY     = 7.8                # floor top to rim plane: the 9 mm battery ends 0.1 mm
-                                # under the raised wall top the shell sits on
+CAVITY     = 8.8                # floor top to rim plane
 SKIRT_OUT  = 1.2                # wall outside the rim outline, over the full height
 SKIRT_H    = 1.0                # outer lip: stands LIP_H + this above the rim, all round
 LIP_H      = 1.3                # wall top raised by this much in three stretches:
@@ -78,7 +80,7 @@ LIP_BOSS_X = 11.5               #   battery side, from the hinge gap to here (sh
 LIP_END_Y  = 6.0                #   screw end, |y| below this (between the bosses)
 HINGE_GAP  = 14.0               #   ...and not within this width at the hinge
 WIN_X      = (-12.0, 11.5)      # USB-C + power switch opening along X
-SILL_H     = 4.0                # wall left under that opening, from the box underside
+SILL_H     = 6.0                # wall left under that opening, from the box underside
 BTN_Y      = (-1.5 + PCB_SHIFT[1], 5.5 + PCB_SHIFT[1])   # (*) underside-button access, +X wall
 
 # ---- hinge (at the -X end, stacked in z) ------------------------------------
@@ -97,7 +99,7 @@ ZF     = Z0 + FLOOR                         # floor top
 SEAM   = ZF + CAVITY                        # rim plane; the top shell sits here
 Z_SLOT = SEAM + LEDGE_T + CLR + SAG         # underside of the upper hinge tab
 Z_TOP  = SEAM + max(LIP_H + SKIRT_H, Z_SLOT - SEAM + CLIP_TOP_T)   # highest point
-ZPCB   = Z_TOP - PCB_FROM_TOP - PCB_T       # PCB underside
+ZPCB   = ZF + PCB_SEAT                      # PCB underside
 PCB_X0 = min(x for x, _ in PCB_SHAPE)       # PCB edge at the hinge end
 PCB_Y1 = max(y for _, y in PCB_SHAPE)       # PCB edge on the battery side
 KEY_XY = (XH - SKIRT_OUT + KEY / 2, YB + SKIRT_OUT - KEY / 2)   # keycap centre
@@ -151,8 +153,12 @@ def screw_bosses():
 
 
 def pcb_supports():
-    """Rails under two PCB edges and a shouldered peg for each locating hole."""
+    """Rails under two PCB edges, a block under the USB-C shell (takes the push when a
+    cable goes in; stops CLR under the shell, clear of its side legs), and a
+    shouldered peg for each locating hole."""
     s = slab((1, 11), (PCB_Y1 - 1.0, PCB_Y1), (ZF, ZPCB))               # battery side
+    s = s.union(slab((USB_X[0] + 0.6, USB_X[1] - 0.6), (USB_Y0 + 0.2, USB_Y0 + 4.2),
+                     (ZF, ZPCB - USB_BELOW - CLR)))                       # under the USB-C
     s = s.union(slab((PCB_X0 - 0.4, PCB_X0 + 1.0), (-3, 3), (ZF, ZPCB)))  # hinge end
     for x, y in PCB_HOLES:
         s = s.union(cyl(x, y, 3.2, (ZF, ZPCB))).union(cyl(x, y, PEG_D, (ZPCB, ZPCB + PCB_T + 0.4)))
@@ -249,8 +255,6 @@ def validate(box):
                     .polyline(list(bat.exterior.coords)[:-1]).close().extrude(bat_h - 0.02)) > 1e-3,
         "room under the PCB for its parts":  ZPCB - ZF < PCB_UNDER + CLR - 1e-6,
         "battery stays under the top shell": ZF + bat_h > SEAM + LIP_H - 0.1 + 1e-6,
-        "PCB top is PCB_FROM_TOP below the highest point":
-            abs(solid.BoundingBox().zmax - (ZPCB + PCB_T) - PCB_FROM_TOP) > 1e-3,
         "outer lip leaves room for the shell wall":
             overlap(shell_wall.cut(hinge_zone).cut(ring(WALL, OUTSIDE, (SEAM, SEAM + LIP_H)))) > 1e-3,
         "nothing sticks up too far":           solid.BoundingBox().zmax > Z_TOP + 1e-6,
@@ -263,7 +267,7 @@ def validate(box):
     for name, failed in failures.items():
         print(("FAIL  " if failed else "ok    ") + name)
     print(f"rim outline {XS - XH:.1f} x {YB - YU:.1f}; floor {Z0:.1f}-{ZF:.1f}, PCB seat {ZPCB:.1f}, "
-          f"PCB top {ZPCB + PCB_T:.1f} ({ZPCB - ZF:.1f} free under it), rim {SEAM:.1f}, top {Z_TOP:.1f}; PCB-wall gap {room.exterior.distance(pcb_plan) + CLR:.2f}, "
+          f"PCB top {ZPCB + PCB_T:.1f} ({ZPCB - ZF:.1f} free under it, {Z_TOP - ZPCB - PCB_T:.1f} below the top), rim {SEAM:.1f}, top {Z_TOP:.1f}; PCB-wall gap {room.exterior.distance(pcb_plan) + CLR:.2f}, "
           f"battery-wall gap {room.exterior.distance(bat) + CLR:.2f}")
     return not any(failures.values())
 
