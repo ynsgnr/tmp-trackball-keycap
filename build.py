@@ -52,7 +52,10 @@ LEDGE_T    = 1.0                # shell's hinge ledge thickness
 
 # ---- electronics ------------------------------------------------------------
 PCB_T      = 1.0
-PCB_SEAT   = 4.6                # floor top up to the PCB underside (set by test fits)
+PCB_FROM_BOTTOM = 9.0           # box underside up to the PCB standing plane (its underside)
+PCB_FROM_TOP    = 7.0           # PCB standing plane up to the highest point of the lip
+STAND_XY   = [(9.45, 7.2), (9.45, 5.0)]   # 1 x 1 mm PCB stands beside the screw bosses,
+STAND_W    = 1.0                # mirrored to -y (clear of the underside side button)
 PCB_UNDER  = 3.0                # tallest part under the PCB (side button)
 PCB_SHIFT  = (-0.95, 0.80)      # correction to the first outline estimate (holes + test fit)
 PCB_SHAPE  = [(x + PCB_SHIFT[0], y + PCB_SHIFT[1]) for x, y in
@@ -72,7 +75,6 @@ BAT_X      = 0.0                # battery centre along X (where the bay is wides
 # ---- box --------------------------------------------------------------------
 WALL       = 1.2                # wall inside the rim outline
 FLOOR      = 1.6
-CAVITY     = 8.8                # floor top to rim plane
 SKIRT_OUT  = 1.2                # wall outside the rim outline, over the full height
 SKIRT_H    = 1.0                # outer lip: stands LIP_H + this above the rim, all round
 LIP_H      = 1.3                # wall top raised by this much in three stretches:
@@ -96,10 +98,10 @@ KEY, CAP_TOP, OVERLAP = 18.0, 4.8, 0.4
 # ---- derived ----------------------------------------------------------------
 Z0     = CAP_TOP - OVERLAP                  # underside of the floor
 ZF     = Z0 + FLOOR                         # floor top
-SEAM   = ZF + CAVITY                        # rim plane; the top shell sits here
+ZPCB   = Z0 + PCB_FROM_BOTTOM               # PCB underside (standing plane)
+Z_TOP  = ZPCB + PCB_FROM_TOP                # highest point (hinge carrier on the lip)
+SEAM   = Z_TOP - max(LIP_H + SKIRT_H, LEDGE_T + CLR + SAG + CLIP_TOP_T)   # rim plane
 Z_SLOT = SEAM + LEDGE_T + CLR + SAG         # underside of the upper hinge tab
-Z_TOP  = SEAM + max(LIP_H + SKIRT_H, Z_SLOT - SEAM + CLIP_TOP_T)   # highest point
-ZPCB   = ZF + PCB_SEAT                      # PCB underside
 PCB_X0 = min(x for x, _ in PCB_SHAPE)       # PCB edge at the hinge end
 PCB_Y1 = max(y for _, y in PCB_SHAPE)       # PCB edge on the battery side
 KEY_XY = (XH - SKIRT_OUT + KEY / 2, YB + SKIRT_OUT - KEY / 2)   # keycap centre
@@ -156,7 +158,11 @@ def pcb_supports():
     """Rails under two PCB edges, a block under the USB-C shell (takes the push when a
     cable goes in; stops CLR under the shell, clear of its side legs), and a
     shouldered peg for each locating hole."""
-    s = slab((1, 11), (PCB_Y1 - 1.0, PCB_Y1), (ZF, ZPCB))               # battery side
+    s = slab((1, 8.4), (PCB_Y1 - 1.0, PCB_Y1), (ZF, ZPCB))              # battery side
+    for x, y in STAND_XY:
+        for ys in (y, -y):                                               # mirrored stands
+            s = s.union(slab((x - STAND_W / 2, x + STAND_W / 2), (ys - STAND_W / 2, ys + STAND_W / 2),
+                             (ZF, ZPCB)))
     s = s.union(slab((USB_X[0] + 0.6, USB_X[1] - 0.6), (USB_Y0 + 0.2, USB_Y0 + 4.2),
                      (ZF, ZPCB - USB_BELOW - CLR)))                       # under the USB-C
     s = s.union(slab((PCB_X0 - 0.4, PCB_X0 + 1.0), (-3, 3), (ZF, ZPCB)))  # hinge end
@@ -254,6 +260,12 @@ def validate(box):
             overlap(cq.Workplane("XY").workplane(offset=ZF + 0.01)
                     .polyline(list(bat.exterior.coords)[:-1]).close().extrude(bat_h - 0.02)) > 1e-3,
         "room under the PCB for its parts":  ZPCB - ZF < PCB_UNDER + CLR - 1e-6,
+        "PCB stands 9 mm up and 7 mm below the top":
+            abs(ZPCB - Z0 - PCB_FROM_BOTTOM) + abs(solid.BoundingBox().zmax - ZPCB - PCB_FROM_TOP) > 1e-3,
+        "PCB stands are under the PCB":
+            not all(Polygon(PCB_SHAPE).contains(rect(x - STAND_W / 2, ys - STAND_W / 2,
+                                                     x + STAND_W / 2, ys + STAND_W / 2))
+                    for x, y in STAND_XY for ys in (y, -y)),
         "battery stays under the top shell": ZF + bat_h > SEAM + LIP_H - 0.1 + 1e-6,
         "outer lip leaves room for the shell wall":
             overlap(shell_wall.cut(hinge_zone).cut(ring(WALL, OUTSIDE, (SEAM, SEAM + LIP_H)))) > 1e-3,
