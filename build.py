@@ -32,7 +32,8 @@ from functools import lru_cache
 
 import cadquery as cq
 import trimesh
-from shapely.geometry import Polygon, box as rect
+from shapely.geometry import LineString, Point, Polygon, box as rect
+from shapely.ops import nearest_points
 
 # ---- FDM tolerances (0.4 mm nozzle, 0.2 mm layers) -------------------------
 CLR = 0.2          # clearance per mating face, horizontal and vertical
@@ -54,9 +55,10 @@ LEDGE_T    = 1.0                # shell's hinge ledge thickness
 PCB_T      = 1.0
 PCB_FROM_BOTTOM = 6.0           # box underside up to the PCB standing plane (its underside)
 PCB_FROM_TOP    = 7.0           # PCB standing plane up to the highest point of the lip
-STAND_XY   = [(9.45, 7.2), (9.45, -7.2),     # 1 x 1 mm PCB stands at the four corners:
-              (-14.4, 6.8), (-14.2, -4.2)]  # beside each screw boss, and either side
-STAND_W    = 1.0                            # of the hinge-end rail
+SUPPORTS   = [((-14.4, 6.6), "wall"), ((-14.3, -4.3), "wall"),   # side supports: 1 mm wide
+              ((9.5, 7.3), "boss"), ((9.6, -8.5), "boss")]     # bars from the wall (hinge
+STAND_W    = 1.0                # corners) or the screw boss towards these points, ending 1 mm
+                                # past the PCB edge
 PCB_UNDER  = 3.0                # tallest part under the PCB (side button)
 PCB_SHIFT  = (-0.95, 0.80)      # correction to the first outline estimate (holes + test fit)
 PCB_SHAPE  = [(x + PCB_SHIFT[0], y + PCB_SHIFT[1]) for x, y in
@@ -156,14 +158,39 @@ def screw_bosses():
     return add.intersect(outline(0, (Z0, SEAM))), cut
 
 
+def support_plans():
+    """Top view of each side support: a STAND_W-wide bar from its anchor (inner wall
+    or screw boss, entering it by 0.4 mm) straight to its target point under the PCB."""
+    inner = RIM.buffer(-WALL, 32).exterior
+    plans = []
+    for (x, y), anchor in SUPPORTS:
+        tip = Point(x, y)
+        if anchor == "wall":
+            root = nearest_points(inner, tip)[0]
+        else:
+            by = SCREW_DY / 2 if y > 0 else -SCREW_DY / 2
+            root = nearest_points(Point(XS - SCREW_EDGE, by).buffer(DRIVER_D / 2 + MIN_T, 64).exterior, tip)[0]
+        dx, dy = tip.x - root.x, tip.y - root.y
+        n = (dx * dx + dy * dy) ** 0.5
+        dx, dy = dx / n, dy / n
+        ray = LineString([root, (root.x + 20 * dx, root.y + 20 * dy)])
+        hit = ray.intersection(Polygon(PCB_SHAPE).exterior)          # where it meets the PCB edge
+        edge = min(getattr(hit, "geoms", [hit]), key=root.distance)
+        reach = root.distance(edge) + 1.0                             # 1 mm under the PCB
+        plans.append(LineString([(root.x - 0.4 * dx, root.y - 0.4 * dy),
+                                 (root.x + reach * dx, root.y + reach * dy)])
+                     .buffer(STAND_W / 2, cap_style=2))
+    return plans
+
+
 def pcb_supports():
     """Rails under two PCB edges, a block under the USB-C shell (takes the push when a
     cable goes in; stops CLR under the shell, clear of its side legs), and a
     shouldered peg for each locating hole."""
     s = slab((1, 8.4), (PCB_Y1 - 1.0, PCB_Y1), (ZF, ZPCB))              # battery side
-    for x, y in STAND_XY:                                                # corner stands
-        s = s.union(slab((x - STAND_W / 2, x + STAND_W / 2), (y - STAND_W / 2, y + STAND_W / 2),
-                         (ZF, ZPCB)))
+    for plan in support_plans():
+        s = s.union(cq.Workplane("XY").workplane(offset=ZF)
+                    .polyline(list(plan.exterior.coords)[:-1]).close().extrude(ZPCB - ZF))
     s = s.union(slab((USB_X[0] + 0.6, USB_X[1] - 0.6), (USB_Y0 + 0.2, USB_Y0 + 4.2),
                      (ZF, ZPCB - USB_BELOW - CLR)))                       # under the USB-C
     s = s.union(slab((PCB_X0 - 0.4, PCB_X0 + 1.0), (-3, 3), (ZF, ZPCB)))  # hinge end
@@ -263,10 +290,9 @@ def validate(box):
         "room under the PCB for its parts":  ZPCB - ZF < PCB_UNDER + CLR - 1e-6,
         "PCB plane at PCB_FROM_BOTTOM / PCB_FROM_TOP":
             abs(ZPCB - Z0 - PCB_FROM_BOTTOM) + abs(solid.BoundingBox().zmax - ZPCB - PCB_FROM_TOP) > 1e-3,
-        "PCB stands are under the PCB":
-            not all(Polygon(PCB_SHAPE).contains(rect(x - STAND_W / 2, y - STAND_W / 2,
-                                                     x + STAND_W / 2, y + STAND_W / 2))
-                    for x, y in STAND_XY),
+        "side supports reach 0.8 mm under the PCB":
+            not all(p.intersection(Polygon(PCB_SHAPE)).area >= 0.8 * STAND_W - 1e-3
+                    for p in support_plans()),
         "battery stays under the top shell": ZF + bat_h > SEAM + LIP_H - 0.1 + 1e-6,
         "outer lip leaves room for the shell wall":
             overlap(shell_wall.cut(hinge_zone).cut(ring(WALL, OUTSIDE, (SEAM, SEAM + LIP_H)))) > 1e-3,
