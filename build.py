@@ -52,7 +52,7 @@ LEDGE_T    = 1.0                # shell's hinge ledge thickness
 
 # ---- electronics ------------------------------------------------------------
 PCB_T      = 1.0
-PCB_FROM_BOTTOM = 9.0           # box underside up to the PCB standing plane (its underside)
+PCB_FROM_BOTTOM = 6.0           # box underside up to the PCB standing plane (its underside)
 PCB_FROM_TOP    = 7.0           # PCB standing plane up to the highest point of the lip
 STAND_XY   = [(9.45, 7.2), (9.45, 5.0)]   # 1 x 1 mm PCB stands beside the screw bosses,
 STAND_W    = 1.0                # mirrored to -y (clear of the underside side button)
@@ -83,7 +83,7 @@ LIP_BOSS_X = 11.5               #   battery side, from the hinge gap to here (sh
 LIP_END_Y  = 6.0                #   screw end, |y| below this (between the bosses)
 HINGE_GAP  = 14.0               #   ...and not within this width at the hinge
 WIN_X      = (-12.0, 11.5)      # USB-C + power switch opening along X
-SILL_H     = 6.0                # wall left under that opening, from the box underside
+SILL_H     = 3.0                # wall left under that opening, from the box underside
 BTN_Y      = (-1.5 + PCB_SHIFT[1], 5.5 + PCB_SHIFT[1])   # (*) underside-button access, +X wall
 
 # ---- hinge (at the -X end, stacked in z) ------------------------------------
@@ -261,7 +261,7 @@ def validate(box):
             overlap(cq.Workplane("XY").workplane(offset=ZF + 0.01)
                     .polyline(list(bat.exterior.coords)[:-1]).close().extrude(bat_h - 0.02)) > 1e-3,
         "room under the PCB for its parts":  ZPCB - ZF < PCB_UNDER + CLR - 1e-6,
-        "PCB stands 9 mm up and 7 mm below the top":
+        "PCB plane at PCB_FROM_BOTTOM / PCB_FROM_TOP":
             abs(ZPCB - Z0 - PCB_FROM_BOTTOM) + abs(solid.BoundingBox().zmax - ZPCB - PCB_FROM_TOP) > 1e-3,
         "PCB stands are under the PCB":
             not all(Polygon(PCB_SHAPE).contains(rect(x - STAND_W / 2, ys - STAND_W / 2,
